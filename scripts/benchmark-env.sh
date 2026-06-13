@@ -7,6 +7,8 @@
 # Usage:
 #   ./scripts/benchmark-env.sh start|stop|restart|status
 #   MACSCP_BENCH_PORT=2223 ./scripts/benchmark-env.sh start
+#
+# Related: run-benchmarks.sh, verify-benchmark-report.sh, ci-local.sh (see docs/README.md)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

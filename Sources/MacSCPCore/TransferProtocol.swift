@@ -46,6 +46,8 @@ public struct SessionConfiguration: Codable, Sendable, Equatable {
     public var keyPassphrase: String?
     public var initialRemotePath: String
     public var advanced: AdvancedSettings
+    /// Transfer network profile applied at connect (TCP buffer sizes, Nagle).
+    public var networkProfile: TransferNetworkProfile
 
     public init(
         id: UUID = UUID(),
@@ -59,7 +61,8 @@ public struct SessionConfiguration: Codable, Sendable, Equatable {
         keyPath: String? = nil,
         keyPassphrase: String? = nil,
         initialRemotePath: String = "/",
-        advanced: AdvancedSettings = AdvancedSettings()
+        advanced: AdvancedSettings = AdvancedSettings(),
+        networkProfile: TransferNetworkProfile = .lan
     ) {
         self.id = id
         self.name = name
@@ -73,5 +76,6 @@ public struct SessionConfiguration: Codable, Sendable, Equatable {
         self.keyPassphrase = keyPassphrase
         self.initialRemotePath = initialRemotePath
         self.advanced = advanced
+        self.networkProfile = networkProfile
     }
 }

@@ -2,7 +2,7 @@
 #
 # Usage:
 #   make              # show targets
-#   make build test   # compile and run tests (42 tests)
+#   make build test   # compile and run tests (50 XCTest + 3 Swift Testing)
 #   make run          # launch MacSCP (starts local SFTP fixture first)
 
 SWIFT       ?= swift
@@ -10,13 +10,14 @@ ROOT        := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 SCRIPTS     := $(ROOT)scripts
 BENCH_ENV   := $(SCRIPTS)/benchmark-env.sh
 RUN_BENCH   := $(SCRIPTS)/run-benchmarks.sh
+VERIFY_BENCH := $(SCRIPTS)/verify-benchmark-report.sh
 CONFIG      := $(HOME)/.macscp/config.toml
 LOG_DIR     := $(HOME)/.macscp/logs
 
-.PHONY: help build build-release test check clean run \
+.PHONY: help build build-release test check ci clean run \
         server-start server-stop server-restart server-status \
-        bench bench-full bench-upload-spike \
-        build-release check package-dmg icon \
+        bench bench-full bench-upload-spike bench-apple-silicon bench-profile bench-verify \
+        build-release package-dmg icon \
         logs config paths
 
 .DEFAULT_GOAL := help
@@ -31,10 +32,12 @@ build: ## Build all targets (debug)
 build-release: ## Build optimized release binaries
 	$(SWIFT) build -c release
 
-test: build ## Run unit tests (39 XCTest + 3 Swift Testing)
+test: build ## Run unit tests (50 XCTest + 3 Swift Testing)
 	$(SWIFT) test
 
 check: build test ## Build + test (CI-friendly)
+
+ci: check bench-verify ## Local CI: tests + Apple Silicon benchmarks + pass-criteria check
 
 clean: ## Remove build artifacts
 	$(SWIFT) package clean
@@ -64,6 +67,15 @@ bench-full: server-start ## Run full benchmark suite (1 MB / 100 MB / 1 GB, 10k 
 bench-upload-spike: server-start ## Citadel vs Traversio vs OpenSSH upload comparison
 	$(SWIFT) run macscp-benchmark upload-spike
 
+bench-apple-silicon: server-start ## Benchmark with host metadata (MACSCP_BENCH_NETWORK=loopback)
+	MACSCP_BENCH_NETWORK=loopback $(RUN_BENCH)
+
+bench-verify: bench-apple-silicon ## Run bench-apple-silicon and verify passCriteriaMet
+	$(VERIFY_BENCH)
+
+bench-profile: server-start ## Sweep upload concurrency settings
+	$(SWIFT) run macscp-benchmark profile-upload
+
 icon: ## Generate AppIcon.icns and populate Xcode asset catalog
 	$(SCRIPTS)/generate-app-icon.sh
 
@@ -87,3 +99,4 @@ paths: ## Print runtime paths (config, logs, profiles, known hosts)
 	@echo "Profiles:   $(HOME)/Library/Application Support/MacSCP/profiles.json"
 	@echo "Known hosts: $(HOME)/.macscp/known_hosts.json"
 	@echo "Benchmark:  $(ROOT).benchmark/ (local SFTP fixture on :2222)"
+	@echo "Scripts:    $(SCRIPTS)/benchmark-env.sh run-benchmarks.sh verify-benchmark-report.sh ci-local.sh"

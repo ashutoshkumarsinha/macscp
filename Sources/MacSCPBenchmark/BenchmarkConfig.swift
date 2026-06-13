@@ -53,7 +53,10 @@ public struct BenchmarkConfig: Sendable {
             authMethod: authMethod,
             keyPath: keyPath,
             keyPassphrase: keyPassphrase,
-            initialRemotePath: dataDirectory.path
+            initialRemotePath: dataDirectory.path,
+            networkProfile: TransferPerformanceTuning.networkProfile(
+                fromEnvironment: ProcessInfo.processInfo.environment["MACSCP_BENCH_NETWORK"]
+            )
         )
     }
 }
@@ -90,6 +93,7 @@ public struct BenchmarkReport: Codable, Sendable {
         public var port: Int
         public var smallFileCount: Int
         public var largeFileSizes: [Int]
+        public var hostInfo: BenchmarkHostInfo?
     }
 
     public struct ReportSummary: Codable, Sendable {

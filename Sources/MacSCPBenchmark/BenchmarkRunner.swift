@@ -346,7 +346,8 @@ struct BenchmarkRunner {
                 host: config.host,
                 port: config.port,
                 smallFileCount: config.smallFileCount,
-                largeFileSizes: config.largeFileSizes
+                largeFileSizes: config.largeFileSizes,
+                hostInfo: BenchmarkHostInfo.current()
             ),
             results: results,
             summary: .init(

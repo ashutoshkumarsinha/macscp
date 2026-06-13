@@ -18,20 +18,25 @@ Sources/
   MacSCPApp/          SwiftUI app + coordinators (profile, session, panes, transfers)
   MacSCPBenchmark/    SFTP benchmark harness
 Tests/
-  MacSCPTests/        42 tests (XCTest + Swift Testing)
+  MacSCPTests/        53 tests (50 XCTest + 3 Swift Testing)
 scripts/
   benchmark-env.sh    Local OpenSSH SFTP server on port 2222
-  run-benchmarks.sh   Start server + run benchmarks
+  run-benchmarks.sh   Start server + run benchmarks (--verify optional)
+  verify-benchmark-report.sh  Fail when passCriteriaMet is false
+  ci-local.sh         Local mirror of GitHub Actions CI
   generate-app-icon.sh
   package-dmg.sh
+.github/workflows/
+  ci.yml              Tests + Apple Silicon benchmarks on macos-15
 ```
 
 ## Build & test
 
 ```bash
 make build
-make test      # 42 tests
+make test      # 53 tests (50 XCTest + 3 Swift Testing)
 make check     # build + test (CI-friendly)
+make ci        # check + bench-apple-silicon + verify pass criteria
 ```
 
 Or directly:
@@ -56,7 +61,7 @@ Default sample profile connects to `127.0.0.1:2222` with `.benchmark/keys/client
 
 **Authentication:** SSH key file, password (Keychain), or SSH agent (`SSH_AUTH_SOCK`). Agent sessions use the Traversio backend; key/password use Citadel by default.
 
-**Configuration:** `~/.macscp/config.toml` (logging + transfer tuning). Logs: `~/.macscp/logs/`. See `make paths` and `make config`.
+**Configuration:** `~/.macscp/config.toml` (logging + transfer tuning). On first launch on Apple Silicon, new configs default to `preset = "apple_silicon"`. Logs: `~/.macscp/logs/`. See `make paths` and `make config`.
 
 ## Development helpers
 
@@ -71,8 +76,11 @@ make server-status
 
 ```bash
 make bench
+make bench-apple-silicon   # tags hostInfo + MACSCP_BENCH_NETWORK=loopback in report
+make bench-verify          # bench-apple-silicon + pass-criteria check
 # or
 ./scripts/run-benchmarks.sh
+./scripts/run-benchmarks.sh --verify
 ```
 
 Full suite (1 MB / 100 MB / 1 GB, 10k small files):
@@ -94,10 +102,35 @@ Results: `.benchmark/benchmark-results/upload-spike.json`
 Upload profiling (sweep `maxConcurrentWrites`):
 
 ```bash
+make bench-profile
+# or
 .build/debug/macscp-benchmark profile-upload
 ```
 
 Results: `.benchmark/benchmark-results/profile-upload.json`
+
+Verify pass criteria locally (same check as CI):
+
+```bash
+./scripts/verify-benchmark-report.sh
+```
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on `macos-15` (Apple Silicon):
+
+- `make check` — build + unit tests
+- `make bench-apple-silicon` + `./scripts/verify-benchmark-report.sh`
+
+Local equivalent:
+
+```bash
+./scripts/ci-local.sh
+# tests only:
+./scripts/ci-local.sh --skip-bench
+```
+
+See [Apple Silicon Performance Guide](docs/apple-silicon-performance.md) for presets and tuning.
 
 ## Package DMG
 
@@ -115,5 +148,6 @@ See [docs/README.md](docs/README.md):
 - [Product specification](docs/spec.md)
 - [High-level design (HLD)](docs/hld.md)
 - [User guide](docs/user-guide.md)
+- [Apple Silicon performance](docs/apple-silicon-performance.md)
 - [Code walkthrough](docs/code-walkthrough.md)
 - SFTP backend spike and CLI reference (planned CLI)

@@ -1,7 +1,6 @@
 // SessionCoordinator.swift — SSH/SFTP connect and disconnect lifecycle.
 //
-// Picks Citadel for key/password auth and Traversio for SSH agent auth.
-// Uses a connection pool when maxConcurrentTransfers > 1 for parallel jobs.
+// Picks backend via SFTPBackendSelector; uses a connection pool sized for Apple Silicon.
 
 import Foundation
 import MacSCPCore
@@ -30,6 +29,12 @@ final class SessionCoordinator {
         transferSettings = settings
     }
 
+    private func configuredSession(from draft: SessionProfileDraft) -> SessionConfiguration {
+        var session = draft.toSessionConfiguration()
+        session.networkProfile = TransferPerformanceTuning.networkProfile(from: transferSettings.preset)
+        return session
+    }
+
     func connect(using draft: SessionProfileDraft) async {
         guard draft.validatePort() else {
             onStatusMessage?("Invalid port (use 1–65535)")
@@ -44,20 +49,24 @@ final class SessionCoordinator {
         onStatusMessage?("Connecting…")
         defer { isConnecting = false }
 
-        let session = draft.toSessionConfiguration()
+        let session = configuredSession(from: draft)
         MacSCPLogger.shared.info(
             "Connecting to \(session.username)@\(session.host):\(session.port) via \(session.protocol.rawValue)",
             category: .session
         )
 
         do {
-            let backendKind = selectBackendKind(for: draft.authMethod)
+            let backendKind = SFTPBackendSelector.select(
+                authMethod: draft.authMethod,
+                settings: transferSettings
+            )
+            SFTPBackendSelector.logSelection(backendKind, settings: transferSettings)
+            TransferNetworkTuning.logIntendedSettings(preset: transferSettings.preset)
+
+            let poolSize = TransferPerformanceTuning.effectivePoolSize(from: transferSettings)
             let rawBackend: TransferBackend
-            if transferSettings.maxConcurrentTransfers > 1 {
-                let pool = PooledTransferBackend(
-                    poolSize: transferSettings.maxConcurrentTransfers,
-                    backendKind: backendKind
-                )
+            if poolSize > 1 {
+                let pool = PooledTransferBackend(poolSize: poolSize, backendKind: backendKind)
                 try await connectionService.connect(backend: pool, configuration: session)
                 rawBackend = pool
             } else {
@@ -90,15 +99,5 @@ final class SessionCoordinator {
         isConnected = false
         showLogin = true
         onStatusMessage?("Disconnected")
-    }
-
-    private func selectBackendKind(for authMethod: AuthMethod) -> SFTPBackendKind {
-        if authMethod == .agent {
-            return .traversio
-        }
-        if transferSettings.useTraversioForPerformance {
-            return .traversio
-        }
-        return .citadel
     }
 }

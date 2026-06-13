@@ -162,9 +162,15 @@ public enum BackendError: Error, Sendable {
 ```text
 MacSCPBackends/SFTP/
   CitadelSFTPBackend.swift      # Default key/password backend
+  CitadelTCPConnector.swift     # Citadel TCP buffer / Nagle tuning
   TraversioSFTPBackend.swift    # Agent auth + benchmarks
   SFTPPathResolver.swift        # Shared path normalize/resolve
   SFTPDirectoryCache.swift      # Session mkdir cache
+  SFTPListingCache.swift        # Remote listDirectory cache (3 s TTL)
+  SFTPBackendSelector.swift     # Backend selection + logging
+  LocalFileReader.swift         # mmap local reads (Citadel upload)
+  TransferBufferPool.swift      # NIO ByteBuffer reuse
+  TransferNetworkTuning.swift   # TCP tuning log helpers
   SFTPUploadPlanner.swift       # Parent dir, file size
   SFTPBatchUploadExecutor.swift # Concurrent batch uploads
   CitadelPipelinedWriter.swift  # Pipelined SFTP WRITE (Citadel)
@@ -184,8 +190,10 @@ MacSCPBackends/SFTP/
 - **Batch uploads**: `uploadBatch` with `maxConcurrentUploads`; remote paths sorted for directory-cache locality; skip/rename policies still stat when needed.
 - **Overwrite uploads**: no remote `stat` when policy is `.overwrite` or `.prompt`.
 - **Parallel queue jobs**: when `max_concurrent_transfers` > 1, `PooledTransferBackend` opens one SFTP connection per slot.
+- **Remote listings**: `SFTPListingCache` (3 s TTL) on Citadel and Traversio reduces repeated `listDirectory` round-trips.
+- **Citadel TCP tuning**: `CitadelTCPConnector` sets `SO_SNDBUF`, `SO_RCVBUF`, and `TCP_NODELAY` from the active preset after connect.
 - **Checksums**: optional via `verify_checksums` in config (`TransferOptions.verifyChecksum`); off by default for throughput.
-- **Presets**: `preset = "lan"` / `"wan"` in `~/.macscp/config.toml` apply tuned defaults (see user guide §5.4).
+- **Presets**: `preset = "default" | "lan" | "wan" | "apple_silicon"` in `~/.macscp/config.toml` apply tuned defaults (see user guide §5.4 and [apple-silicon-performance.md](apple-silicon-performance.md)).
 
 ---
 
@@ -198,6 +206,7 @@ Integration tests use the local OpenSSH fixture:
 ```bash
 make server-start
 make test
+make bench-verify   # optional throughput + pass-criteria gate
 ```
 
 Conformance coverage: list, upload/download, skip/rename/overwrite, cancellation, disconnect handling, directory planner.

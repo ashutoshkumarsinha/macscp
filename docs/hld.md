@@ -67,13 +67,17 @@ Sources/
     Coordinators/     Profile, Session, LocalPane, RemotePane, Transfer
   MacSCPBenchmark/    macscp-benchmark CLI for throughput spikes
 Tests/
-  MacSCPTests/        Unit + integration tests (42 cases)
+  MacSCPTests/        Unit + integration tests (53 cases)
 scripts/
   benchmark-env.sh    Local OpenSSH SFTP on :2222
-  run-benchmarks.sh   Full benchmark runner
+  run-benchmarks.sh   Benchmark runner (--verify optional)
+  verify-benchmark-report.sh  Pass-criteria gate for CI
+  ci-local.sh         Local GitHub Actions parity (check + bench + verify)
   generate-app-icon.sh
   package-dmg.sh
-Makefile              build, test, run, bench, logs, config, paths
+.github/workflows/
+  ci.yml              macos-15: make check + bench-apple-silicon + verify
+Makefile              build, test, ci, run, bench, logs, config, paths
 ```
 
 ### 3.1 Module Dependency Graph
@@ -265,6 +269,11 @@ Both Citadel and Traversio backends share:
 | `SFTPBatchUploadExecutor` | Concurrent batch upload with `@Sendable` upload closure |
 | `TransferDestinationResolver` | Skip/rename/overwrite resolution |
 | `SFTPErrorHelpers` | Already-exists detection for mkdir |
+| `SFTPListingCache` | 3 s TTL cache for remote directory listings (Citadel + Traversio) |
+| `CitadelTCPConnector` | Post-connect TCP buffer / Nagle tuning for Citadel |
+| `SFTPBackendSelector` | Citadel vs Traversio selection + logging |
+| `LocalFileSequentialReader` | mmap reads for large local files (Citadel upload) |
+| `TransferBufferPool` | Reusable NIO `ByteBuffer` pool |
 | `MacSCPHostKeySupport` | TOFU store at `~/.macscp/known_hosts.json` |
 | `SSHAgentAuthSupport` | Traversio `SSHAgentClient` wrapper for agent auth |
 | `SerializingTransferBackend` | Actor wrapper serializing backend calls |
@@ -278,6 +287,8 @@ Both Citadel and Traversio backends share:
 | Pipelined writes | `CitadelPipelinedWriter` — sliding window of SFTP WRITE packets |
 | Pipelined downloads | `CitadelPipelinedReader` when `maxConcurrentReads > 1` |
 | Directory cache | `SFTPDirectoryCache` — dedupe `mkdir` per session |
+| Listing cache | `SFTPListingCache` — 3 s TTL on `listDirectory` |
+| TCP tuning | `CitadelTCPConnector` — preset-driven socket options after connect |
 | Batch upload | `uploadBatch()` via `SFTPBatchUploadExecutor` |
 | Download | Chunked read with resume; pipelined when configured |
 | Cancel | Poll `TransferCancellation` in loops + pipelined I/O |
@@ -287,6 +298,7 @@ Both Citadel and Traversio backends share:
 
 - Native `SSHAgentClient` for `SSH_AUTH_SOCK` / ssh-agent identities
 - `uploadFile` / `downloadFile` with built-in concurrent read/write
+- `SFTPListingCache` on remote directory listings (same TTL as Citadel)
 - Selected automatically when profile uses SSH agent authentication
 - **AGPL-3.0** — legal review before wide distribution as default backend
 
@@ -335,15 +347,23 @@ See [SFTP backend spike](spikes/sftp-backend-spike.md) for benchmark numbers.
 ```bash
 make bench              # quick suite
 make bench-full         # 1 MB / 100 MB / 1 GB, 10k files
+make bench-apple-silicon
+make bench-verify       # bench-apple-silicon + pass-criteria check
 make bench-upload-spike # Citadel vs Traversio vs OpenSSH
+make ci                 # check + bench-verify (local CI parity)
 # or
 ./scripts/benchmark-env.sh start
-./scripts/run-benchmarks.sh
+./scripts/run-benchmarks.sh [--verify]
+./scripts/ci-local.sh
 ```
+
+Environment variables: `MACSCP_BENCH_FULL`, `MACSCP_BENCH_NETWORK` (`loopback` | `lan` | `wifi` | `wan`), `MACSCP_BENCH_HOST`, `MACSCP_BENCH_PORT`.
+
+Reports: `.benchmark/benchmark-results/report.json` (includes `hostInfo` on Apple Silicon runs).
 
 Scenarios: large upload/download, small-file batch, list directory, resume, encrypted key auth.
 
-Pass criteria (spec): ≥ 90% OpenSSH throughput (large files); ≥ 80% (small files).
+Pass criteria (spec): ≥ 90% OpenSSH throughput (large files); ≥ 80% (small files). CI verifies via `./scripts/verify-benchmark-report.sh` on GitHub Actions `macos-15`.
 
 ---
 
@@ -361,8 +381,10 @@ Pass criteria (spec): ≥ 90% OpenSSH throughput (large files); ≥ 80% (small f
 | `TransferDestinationResolverTests` | Skip/rename/overwrite resolution |
 | `TransferQueueTests` | Cancel, disconnect, skip policy (mock backend) |
 | `SFTPAttributeMappingTests` | Permission → entry type |
+| `StreamingChecksumTests` | Incremental SHA-256 vs one-shot |
+| `MacSCPConfigurationTests` | Presets, first-launch arm64 defaults |
 
-Run: `make test` or `swift test` (**42 tests**).
+Run: `make test` or `swift test` (**53 tests**: 50 XCTest + 3 Swift Testing).
 
 ---
 

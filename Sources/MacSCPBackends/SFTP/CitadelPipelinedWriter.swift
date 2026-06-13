@@ -6,7 +6,6 @@ import MacSCPCore
 import NIO
 
 /// Overlaps reading the next local chunk with writing the current chunk to SFTP.
-/// Citadel SFTPFile does not support concurrent writes on one handle.
 enum CitadelPipelinedWriter {
     private final class WriteCoordinator: @unchecked Sendable {
         let file: SFTPFile
@@ -22,16 +21,18 @@ enum CitadelPipelinedWriter {
 
     static func upload(
         file: SFTPFile,
-        readHandle: FileHandle,
+        localURL: URL,
         totalSize: Int,
         startOffset: UInt64,
         chunkSize: Int,
         transferID: UUID,
         remotePath: String,
         progress: ProgressHandler?,
-        cancellation: TransferCancellation?
+        cancellation: TransferCancellation?,
+        checksum: StreamingSHA256?
     ) async throws -> Int64 {
         let coordinator = WriteCoordinator(file: file)
+        let reader = try LocalFileSequentialReader(url: localURL)
         let readChunkSize = max(chunkSize, 256 * 1024)
         var offset = startOffset
         var prefetch: Task<Data, Error>?
@@ -70,28 +71,27 @@ enum CitadelPipelinedWriter {
                 }
             } else {
                 let toRead = min(readChunkSize, totalSize - Int(offset))
-                guard let chunk = try readHandle.read(upToCount: toRead), !chunk.isEmpty else {
-                    break
-                }
-                data = chunk
+                data = try reader.read(from: Int(offset), count: toRead)
             }
 
             if data.isEmpty { break }
 
-            let buffer = ByteBuffer(data: data)
+            checksum?.update(data)
+
+            var buffer = TransferBufferPool.borrow(capacity: data.count)
+            buffer.writeBytes(data)
             try await coordinator.write(buffer, at: offset)
+            TransferBufferPool.recycle(buffer)
+
             offset += UInt64(data.count)
             reportProgress()
 
             prefetch?.cancel()
             if offset < UInt64(totalSize) {
-                let nextOffset = offset
-                let nextLength = min(readChunkSize, totalSize - Int(nextOffset))
+                let nextOffset = Int(offset)
+                let nextLength = min(readChunkSize, totalSize - nextOffset)
                 prefetch = Task {
-                    guard let chunk = try readHandle.read(upToCount: nextLength), !chunk.isEmpty else {
-                        return Data()
-                    }
-                    return chunk
+                    try reader.read(from: nextOffset, count: nextLength)
                 }
             } else {
                 prefetch = nil

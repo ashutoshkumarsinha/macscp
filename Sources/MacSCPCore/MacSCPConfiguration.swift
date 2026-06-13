@@ -25,6 +25,7 @@ public enum TransferPerformancePreset: String, Sendable, Equatable {
     case `default` = "default"
     case lan = "lan"
     case wan = "wan"
+    case appleSilicon = "apple_silicon"
 }
 
 public struct MacSCPTransferSettings: Sendable, Equatable {
@@ -79,7 +80,13 @@ public struct MacSCPAppSettings: Sendable, Equatable {
 public enum MacSCPConfiguration {
     public static let configFileName = "config.toml"
 
-    public static let defaultConfigContents = """
+    public static let defaultConfigContents = defaultConfigContents(preset: .default)
+
+    public static func defaultConfigContents(preset: TransferPerformancePreset) -> String {
+        var transfer = MacSCPTransferSettings(preset: preset)
+        applyPreset(preset, to: &transfer)
+
+        return """
 # MacSCP configuration
 # See docs/user-guide.md §5.4 for details.
 
@@ -90,16 +97,20 @@ retention_days = 14
 mirror_stderr = false
 
 [transfer]
-preset = "default"
-max_concurrent_transfers = 2
-max_concurrent_writes = 16
-max_concurrent_reads = 8
-max_concurrent_uploads = 12
-chunk_size = 1048576
+preset = "\(preset.rawValue)"
+max_concurrent_transfers = \(transfer.maxConcurrentTransfers)
+max_concurrent_writes = \(transfer.maxConcurrentWrites)
+max_concurrent_reads = \(transfer.maxConcurrentReads)
+max_concurrent_uploads = \(transfer.maxConcurrentUploads)
+chunk_size = \(transfer.chunkSize)
 resume = true
 verify_checksums = false
 use_traversio_for_performance = false
+
+# Apple Silicon tuned preset (also available: lan, wan, apple_silicon):
+# preset = "apple_silicon"
 """
+    }
 
     public static func macscpDirectory(homeDirectory: URL) -> URL {
         homeDirectory.appendingPathComponent(".macscp", isDirectory: true)
@@ -115,7 +126,9 @@ use_traversio_for_performance = false
 
         let configURL = configURL(homeDirectory: homeDirectory)
         if !FileManager.default.fileExists(atPath: configURL.path) {
-            try defaultConfigContents.write(to: configURL, atomically: true, encoding: .utf8)
+            let preset = TransferPerformanceTuning.suggestedPresetOnFirstLaunch() ?? .default
+            let contents = defaultConfigContents(preset: preset)
+            try contents.write(to: configURL, atomically: true, encoding: .utf8)
         }
 
         let contents = try String(contentsOf: configURL, encoding: .utf8)
@@ -180,6 +193,13 @@ use_traversio_for_performance = false
             settings.maxConcurrentReads = 8
             settings.maxConcurrentUploads = 4
             settings.chunkSize = 262_144
+            settings.verifyChecksums = false
+        case .appleSilicon:
+            settings.maxConcurrentTransfers = AppleSiliconSupport.recommendedPoolSize
+            settings.maxConcurrentWrites = 32
+            settings.maxConcurrentReads = 16
+            settings.maxConcurrentUploads = 24
+            settings.chunkSize = 2_097_152
             settings.verifyChecksums = false
         }
     }
