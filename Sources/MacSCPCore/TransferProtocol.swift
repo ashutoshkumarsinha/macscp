@@ -17,6 +17,18 @@ public enum AuthMethod: String, Codable, Sendable {
     case interactive
 }
 
+public enum ProxyType: String, Codable, Sendable, Equatable {
+    case none
+    case http
+    case socks5
+    case jump
+}
+
+public enum UILayoutMode: String, Codable, Sendable, Equatable {
+    case commander
+    case explorer
+}
+
 public struct AdvancedSettings: Codable, Sendable, Equatable {
     public var compression: Bool
     public var connectionTimeoutSeconds: Int
@@ -25,6 +37,9 @@ public struct AdvancedSettings: Codable, Sendable, Equatable {
     public var ftpsImplicit: Bool
     public var cloudRegion: String?
     public var cloudBucket: String?
+    public var proxyType: ProxyType
+    public var proxyHost: String?
+    public var proxyPort: Int?
 
     public init(
         compression: Bool = false,
@@ -33,7 +48,10 @@ public struct AdvancedSettings: Codable, Sendable, Equatable {
         ftpPassive: Bool = true,
         ftpsImplicit: Bool = false,
         cloudRegion: String? = nil,
-        cloudBucket: String? = nil
+        cloudBucket: String? = nil,
+        proxyType: ProxyType = .none,
+        proxyHost: String? = nil,
+        proxyPort: Int? = nil
     ) {
         self.compression = compression
         self.connectionTimeoutSeconds = connectionTimeoutSeconds
@@ -42,6 +60,9 @@ public struct AdvancedSettings: Codable, Sendable, Equatable {
         self.ftpsImplicit = ftpsImplicit
         self.cloudRegion = cloudRegion
         self.cloudBucket = cloudBucket
+        self.proxyType = proxyType
+        self.proxyHost = proxyHost
+        self.proxyPort = proxyPort
     }
 }
 

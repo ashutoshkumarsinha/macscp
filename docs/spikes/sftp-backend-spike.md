@@ -302,11 +302,11 @@ Run after Phase 0 scaffold exists (`MacSCPBenchmark` target).
 
 Checklist to complete during Phase 0 (1–2 days each):
 
-- [ ] Load `~/.ssh/id_ed25519` with passphrase from Keychain.
-- [ ] Authenticate via `SSH_AUTH_SOCK` (system agent).
-- [ ] Read `KnownHosts` / TOFU store; reject changed keys.
-- [ ] Honor `ProxyJump` from OpenSSH config (Traversio native; Citadel may need manual jump implementation).
-- [ ] Document cipher mismatch errors with actionable UI text.
+- [x] Load `~/.ssh/id_ed25519` with passphrase from Keychain.
+- [x] Authenticate via `SSH_AUTH_SOCK` (system agent).
+- [x] Read `KnownHosts` / TOFU store; reject changed keys.
+- [ ] Honor `ProxyJump` from OpenSSH config (Traversio selected when jump host configured in profile).
+- [x] Document cipher mismatch errors with actionable UI text (via BackendError messages).
 
 ---
 

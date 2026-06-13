@@ -101,6 +101,9 @@ extension MacSCPCLICommand {
         @Flag(name: .long, help: "Mirror remote → local instead of local → remote.")
         var mirrorRemote = false
 
+        @Flag(name: .long, help: "Two-way sync (upload newer local + download newer remote).")
+        var bidirectional = false
+
         @Flag(name: .long, help: "Preview only.")
         var preview = false
 
@@ -109,6 +112,7 @@ extension MacSCPCLICommand {
                 local: local,
                 remote: remote,
                 mirrorRemote: mirrorRemote,
+                bidirectional: bidirectional,
                 preview: preview
             )
         }

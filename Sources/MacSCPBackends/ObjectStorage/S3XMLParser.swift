@@ -55,6 +55,21 @@ enum S3XMLParser {
         return entries.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    static func parseUploadID(_ data: Data) throws -> String {
+        guard let text = String(data: data, encoding: .utf8),
+              let match = matches(text, pattern: #"<UploadId>([^<]+)</UploadId>"#).first else {
+            throw BackendError.transferFailed("Missing upload ID")
+        }
+        return match
+    }
+
+    static func completeMultipartBody(parts: [(Int, String)]) -> Data {
+        let body = parts.sorted { $0.0 < $1.0 }.map { part, etag in
+            "<Part><PartNumber>\(part)</PartNumber><ETag>\(etag)</ETag></Part>"
+        }.joined()
+        return Data("<CompleteMultipartUpload>\(body)</CompleteMultipartUpload>".utf8)
+    }
+
     private static func matches(_ text: String, pattern: String) -> [String] {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
         let range = NSRange(text.startIndex..<text.endIndex, in: text)

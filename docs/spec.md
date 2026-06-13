@@ -13,7 +13,7 @@ An open-source, WinSCP-inspired file transfer client rebuilt from the ground up 
 | Target OS | macOS 15 Sequoia minimum; macOS 26 Tahoe primary |
 | Architecture | Apple Silicon native (arm64); Intel best-effort via Rosetta where feasible |
 | Language | Swift 6 |
-| License | TBD (recommend MIT or Apache 2.0 for OSS adoption) |
+| License | MIT (see [LICENSE](../LICENSE)) |
 | Inspiration | [WinSCP](https://winscp.net/) — feature parity where sensible, macOS-native UX everywhere else |
 
 ### Related Documents
@@ -72,7 +72,7 @@ MacSCP fills the gap left by WinSCP being Windows-only. macOS users currently ch
 | Crash-free sessions | > 99.5% | Not measured |
 | Keychain credential retrieval | < 100 ms | Not measured |
 | CLI script compatibility | Documented subset of WinSCP scripting verbs | Spec only (`macscp` CLI not shipped) |
-| Unit test coverage (core/backends) | All critical transfer paths covered | **79** XCTest cases + **3** Swift Testing cases (`make check`) |
+| Unit test coverage (core/backends) | All critical transfer paths covered | **102** XCTest cases + **3** Swift Testing cases (`make check`) |
 
 ---
 
@@ -419,7 +419,7 @@ Future backends (FTP, WebDAV, S3) implement the same `TransferBackend` surface w
 | `MacSCPUI` | Background transfer queue, job state machine, overwrite batch types (shared by app and tests) |
 | `MacSCPApp` | SwiftUI executable, coordinator decomposition, session profiles, dual-pane commander |
 | `MacSCPBenchmark` | `macscp-benchmark` CLI — throughput comparison vs OpenSSH (`make bench-apple-silicon`) |
-| `MacSCPTests` | Unit and integration tests against local OpenSSH fixture (port 2222); **79** XCTest + **3** Swift Testing cases |
+| `MacSCPTests` | Unit and integration tests against local OpenSSH fixture (port 2222); **102** XCTest + **3** Swift Testing cases |
 
 Shipped: `macscp-cli` Swift product (installed as `macscp`; see [cli-reference.md](cli-reference.md)).
 
@@ -429,7 +429,7 @@ Shipped: `macscp-cli` Swift product (installed as `macscp`; see [cli-reference.m
 - **Application config:** `~/.macscp/config.toml` — logging and transfer presets (§2.3).
 - **Trust store:** `~/.macscp/known_hosts.json` (TOFU fingerprints).
 - **Logs:** `~/.macscp/logs/macscp-YYYY-MM-DD.log` (daily rotation).
-- **Transfer history:** optional, user-enabled, local only (not implemented).
+- **Transfer history:** optional, user-enabled, local JSON at `~/.macscp/transfer-history.json`.
 
 ### 7.3 Dependencies (Current)
 
@@ -441,7 +441,7 @@ Shipped: `macscp-cli` Swift product (installed as `macscp`; see [cli-reference.m
 | [swift-argument-parser](https://github.com/apple/swift-argument-parser) | `macscp-benchmark` CLI |
 | [swift-log](https://github.com/apple/swift-log) | Structured logging in benchmark target |
 
-Future (Phase 3+): aws-sdk-swift (S3), additional protocol clients.
+Future backends: additional protocol clients as needed (S3/GCS/WebDAV shipped in Phase 3).
 
 ### 7.4 Quality Assurance & Benchmarks
 
@@ -537,6 +537,22 @@ Run: `make test` or `swift test`.
 - [x] Transfer history (optional, local)
 - [x] Notification Center on queue completion
 
+### Phase 4 — Parity completion (shipped)
+
+- [x] Multi-session tabs (`⌘T` / `⌘W`)
+- [x] Explorer layout mode
+- [x] Integrated SSH command pane
+- [x] Bidirectional directory sync
+- [x] Proxy settings (HTTP, SOCKS5, SSH jump → Traversio)
+- [x] Master password + encrypted profile export
+- [x] S3 multipart upload (large files)
+- [x] Finder Sync badges on synced folders
+- [x] CLI script options (`option continue on`, `option failonnomatch on`)
+- [x] Symlink following in directory transfers
+- [x] Keyboard navigation (type-ahead, `⌘↑` up, Space Quick Look)
+- [x] App Sandbox entitlements variant + security-scoped bookmarks
+- [x] Launch/connect timing metrics
+
 ---
 
 ## 10. Open Questions
@@ -579,7 +595,7 @@ Run: `make test` or `swift test`.
 | Scripting / `winscp.com` | `macscp` CLI + script files | 1–2 | CLI done; full script parity partial |
 | Performance tuning | Transfer presets + Apple Silicon layer | 1 | Done |
 | .NET assembly | Swift `MacSCPCore` library (documented API) | 3 | Partial (library exists) |
-| Master password | Export encryption + optional app lock | 1–2 | Touch ID lock done; export encryption pending |
+| Master password | Export encryption + optional app lock | 1–4 | Touch ID lock + encrypted export shipped |
 
 ---
 

@@ -24,7 +24,7 @@ public enum DirectoryTransferPlanner {
     ) throws -> [DirectoryTransferFile] {
         guard let enumerator = FileManager.default.enumerator(
             at: directory,
-            includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles]
         ) else {
             return []
@@ -34,10 +34,14 @@ public enum DirectoryTransferPlanner {
         let normalizedBase = SFTPPathJoin.normalizeRemote(remoteBase)
 
         for case let fileURL as URL in enumerator {
-            let values = try fileURL.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+            let values = try fileURL.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey])
             if values.isDirectory == true { continue }
+            if values.isSymbolicLink == true {
+                let resolved = fileURL.resolvingSymlinksInPath()
+                let resolvedValues = try resolved.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+                if resolvedValues.isDirectory == true { continue }
+            }
 
-            // Standardized paths avoid /var vs /private mismatches on macOS.
             let root = directory.standardizedFileURL.path
             let full = fileURL.standardizedFileURL.path
             guard full.hasPrefix(root + "/") else { continue }
@@ -104,8 +108,15 @@ public enum DirectoryTransferPlanner {
                     )
                 )
             case .symlink:
-                // Follow symlinks is not implemented; skip to avoid surprising targets.
-                continue
+                if let target = try? await backend.stat(path: entry.path), target.type == EntryType.file {
+                    files.append(
+                        DirectoryTransferFile(
+                            localURL: localBase.appendingPathComponent(entry.name),
+                            remotePath: entry.path,
+                            totalBytes: target.size
+                        )
+                    )
+                }
             }
         }
     }

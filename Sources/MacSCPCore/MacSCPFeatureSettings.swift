@@ -4,15 +4,18 @@ public struct MacSCPFeatureSettings: Sendable, Equatable {
     public var transferHistoryEnabled: Bool
     public var notifyOnQueueComplete: Bool
     public var iCloudProfileSyncEnabled: Bool
+    public var uiLayoutMode: UILayoutMode
 
     public init(
         transferHistoryEnabled: Bool = false,
         notifyOnQueueComplete: Bool = false,
-        iCloudProfileSyncEnabled: Bool = false
+        iCloudProfileSyncEnabled: Bool = false,
+        uiLayoutMode: UILayoutMode = .commander
     ) {
         self.transferHistoryEnabled = transferHistoryEnabled
         self.notifyOnQueueComplete = notifyOnQueueComplete
         self.iCloudProfileSyncEnabled = iCloudProfileSyncEnabled
+        self.uiLayoutMode = uiLayoutMode
     }
 }
 

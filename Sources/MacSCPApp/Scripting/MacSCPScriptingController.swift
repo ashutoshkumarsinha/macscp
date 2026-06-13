@@ -17,6 +17,10 @@ enum MacSCPScriptingController {
         appModel.selectedProfileID = profile.id
         appModel.draft = SessionProfileDraft(from: profile)
         await appModel.connect()
+        for _ in 0 ..< 100 where !appModel.isConnected {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        guard appModel.isConnected else { throw ScriptingError.notConnected }
     }
 
     static func disconnect() async {

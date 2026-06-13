@@ -1,5 +1,3 @@
-// SyncCoordinator.swift — Directory compare and enqueue one-way sync jobs.
-
 import Foundation
 import MacSCPCore
 
@@ -9,6 +7,7 @@ final class SyncCoordinator {
     var compareRows: [SyncCompareRow] = []
     var isComparing = false
     var syncDirection: SyncDirection = .mirrorLocalToRemote
+    var deleteExtraneous = false
     var showSyncSheet = false
 
     var onStatusMessage: ((String) -> Void)?
@@ -37,7 +36,38 @@ final class SyncCoordinator {
         }
     }
 
-    func enqueueSync(transferCoordinator: TransferCoordinator, previewOnly: Bool) {
+    func enqueueSync(
+        transferCoordinator: TransferCoordinator,
+        fileOps: FileOperationsCoordinator,
+        backend: TransferBackend?,
+        previewOnly: Bool
+    ) {
+        if syncDirection == .bidirectional {
+            let plan = DirectorySyncEngine.bidirectionalPlan(rows: compareRows, deleteExtraneous: deleteExtraneous)
+            if previewOnly {
+                onStatusMessage?(
+                    "Preview: \(plan.uploads.count) upload(s), \(plan.downloads.count) download(s), " +
+                    "\(plan.remoteDeletes.count + plan.localDeletes.count) delete(s)"
+                )
+                return
+            }
+            transferCoordinator.enqueueSyncUpload(files: plan.uploads)
+            transferCoordinator.enqueueSyncDownload(files: plan.downloads)
+            if deleteExtraneous, let backend {
+                Task {
+                    for path in plan.remoteDeletes {
+                        try? await backend.removeFile(at: path)
+                    }
+                    for url in plan.localDeletes {
+                        try? FileManager.default.removeItem(at: url)
+                    }
+                }
+            }
+            showSyncSheet = false
+            onStatusMessage?("Queued bidirectional sync")
+            return
+        }
+
         let files = DirectorySyncEngine.toTransferFiles(rows: compareRows, direction: syncDirection)
         if previewOnly {
             onStatusMessage?("Preview: \(files.count) file(s) would transfer")
@@ -52,6 +82,8 @@ final class SyncCoordinator {
             transferCoordinator.enqueueSyncUpload(files: files)
         case .mirrorRemoteToLocal:
             transferCoordinator.enqueueSyncDownload(files: files)
+        case .bidirectional:
+            break
         }
         showSyncSheet = false
         onStatusMessage?("Queued \(files.count) sync job(s)")

@@ -1,12 +1,15 @@
 // SessionLoginView.swift — Profile sidebar and connection form (key / password / agent).
 
 import SwiftUI
+import AppKit
 import MacSCPCore
 
 struct SessionLoginView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
     @State private var profileSearchText = ""
+    @State private var masterPassword = ""
+    @State private var exportError: String?
 
     private var filteredProfiles: [SessionProfile] {
         let query = profileSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -125,6 +128,33 @@ struct SessionLoginView: View {
             )
             TextField("Profile Name", text: Bindable(appModel).draft.name)
 
+            Section("Proxy") {
+                Picker("Type", selection: Bindable(appModel).draft.proxyType) {
+                    Text("None").tag(ProxyType.none)
+                    Text("HTTP").tag(ProxyType.http)
+                    Text("SOCKS5").tag(ProxyType.socks5)
+                    Text("SSH Jump Host").tag(ProxyType.jump)
+                }
+                if appModel.draft.proxyType != .none {
+                    TextField("Proxy Host", text: Bindable(appModel).draft.proxyHost)
+                    TextField("Port (optional)", text: Bindable(appModel).draft.proxyPort)
+                }
+            }
+
+            Section("Security") {
+                SecureField("Master password", text: $masterPassword)
+                Button("Set Master Password") {
+                    try? MasterPasswordService.setMasterPassword(masterPassword)
+                    masterPassword = ""
+                }
+                Button("Export Encrypted Profiles…") {
+                    exportProfiles()
+                }
+                if let exportError {
+                    Text(exportError).font(.caption).foregroundStyle(.red)
+                }
+            }
+
             Toggle("Require Touch ID to connect", isOn: Binding(
                 get: { AppLockService.isEnabled },
                 set: { AppLockService.setEnabled($0) }
@@ -171,5 +201,17 @@ struct SessionLoginView: View {
         .formStyle(.grouped)
         .padding()
         .navigationTitle("New Connection")
+    }
+
+    private func exportProfiles() {
+        exportError = nil
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "macscp-profiles.enc"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try appModel.exportEncryptedProfiles(to: url, password: masterPassword)
+        } catch {
+            exportError = error.localizedDescription
+        }
     }
 }

@@ -118,6 +118,7 @@ use_traversio_for_performance = false
 transfer_history = false
 notify_on_queue_complete = false
 icloud_profile_sync = false
+ui_layout = "commander"
 
 # Apple Silicon tuned preset (also available: lan, wan, apple_silicon):
 # preset = "apple_silicon"
@@ -172,6 +173,7 @@ icloud_profile_sync = false
             "transfer_history = \(features.transferHistoryEnabled)",
             "notify_on_queue_complete = \(features.notifyOnQueueComplete)",
             "icloud_profile_sync = \(features.iCloudProfileSyncEnabled)",
+            "ui_layout = \"\(features.uiLayoutMode.rawValue)\"",
         ]
 
         if let start = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "[app]" }) {
@@ -325,6 +327,8 @@ icloud_profile_sync = false
             settings.notifyOnQueueComplete = parseBool(value) ?? settings.notifyOnQueueComplete
         case "icloud_profile_sync":
             settings.iCloudProfileSyncEnabled = parseBool(value) ?? settings.iCloudProfileSyncEnabled
+        case "ui_layout":
+            settings.uiLayoutMode = UILayoutMode(rawValue: unquote(value).lowercased()) ?? settings.uiLayoutMode
         default:
             break
         }

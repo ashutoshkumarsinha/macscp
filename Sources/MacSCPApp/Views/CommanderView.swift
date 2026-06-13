@@ -1,6 +1,7 @@
 // CommanderView.swift — Dual-pane file browser, toolbar transfers, drag-and-drop.
 
 import SwiftUI
+import AppKit
 import MacSCPCore
 
 struct CommanderView: View {
@@ -8,53 +9,20 @@ struct CommanderView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            tabBar
             commanderToolbar
             Divider()
-            HSplitView {
-                FilePaneView(
-                    paneSide: .local,
-                    title: "LOCAL",
-                    subtitle: appModel.localPath.path,
-                    entries: appModel.localEntries.map { .local($0) },
-                    selection: Bindable(appModel).selectedLocalNames,
-                    onRefresh: { Task { await appModel.refreshLocal() } },
-                    onUp: { appModel.navigateLocalUp() },
-                    onOpen: { entry in
-                        if case let .local(local) = entry, local.isDirectory {
-                            appModel.openLocalDirectory(local.name)
-                        }
-                    },
-                    onDropFromOpposite: { payload in
-                        Task { await appModel.downloadDropped(fileNames: payload.fileNames) }
-                    },
-                    onNewFolder: { appModel.promptNewFolder(pane: .local) },
-                    onRename: { appModel.promptRename(pane: .local, entryName: $0) },
-                    onDelete: { Task { await appModel.deleteSelected(pane: .local) } },
-                    onProperties: { appModel.promptProperties(pane: .local, entryName: $0) }
-                )
-                FilePaneView(
-                    paneSide: .remote,
-                    title: "REMOTE",
-                    subtitle: "\(appModel.draft.host):\(appModel.remotePath)",
-                    entries: appModel.remoteEntries.map { .remote($0) },
-                    selection: Bindable(appModel).selectedRemoteNames,
-                    onRefresh: { Task { await appModel.refreshRemote() } },
-                    onUp: { Task { await appModel.navigateRemoteUp() } },
-                    onOpen: { entry in
-                        if case let .remote(remote) = entry, remote.type == .directory {
-                            Task { await appModel.openRemoteDirectory(remote.name) }
-                        }
-                    },
-                    onDropFromOpposite: { payload in
-                        Task { await appModel.uploadDropped(fileNames: payload.fileNames) }
-                    },
-                    onNewFolder: { appModel.promptNewFolder(pane: .remote) },
-                    onRename: { appModel.promptRename(pane: .remote, entryName: $0) },
-                    onDelete: { Task { await appModel.deleteSelected(pane: .remote) } },
-                    onProperties: { appModel.promptProperties(pane: .remote, entryName: $0) },
-                    onQuickLook: { Task { await appModel.quickLookRemote() } },
-                    onEdit: { Task { await appModel.editRemoteSelection() } },
-                    onEditInternal: { Task { await appModel.editRemoteSelectionInternal() } }
+            if appModel.featureSettings.uiLayoutMode == .explorer {
+                explorerLayout
+            } else {
+                dualPaneLayout
+            }
+            if appModel.showTerminalPane {
+                Divider()
+                EmbeddedTerminalView(
+                    host: appModel.draft.host,
+                    port: Int(appModel.draft.port) ?? 22,
+                    username: appModel.draft.username
                 )
             }
             Divider()
@@ -144,6 +112,105 @@ struct CommanderView: View {
         }
     }
 
+    private var tabBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(appModel.workspacesForTabs) { tab in
+                    Button(tab.title) {
+                        appModel.selectTab(tab.id)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(tab.id == appModel.selectedTabID ? .accentColor : .secondary)
+                }
+                Button("", systemImage: "plus") { appModel.newTab() }
+                if appModel.workspacesForTabs.count > 1 {
+                    Button("", systemImage: "xmark") {
+                        Task { await appModel.closeSelectedTab() }
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+    }
+
+    private var dualPaneLayout: some View {
+        HSplitView {
+            localPane
+            remotePane
+        }
+    }
+
+    private var explorerLayout: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Local files open in Finder")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Reveal Local Folder") {
+                    NSWorkspace.shared.open(appModel.localPath)
+                }
+                Button("Choose Local Folder") {
+                    appModel.chooseLocalFolder()
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            remotePane
+        }
+    }
+
+    private var localPane: some View {
+        FilePaneView(
+            paneSide: .local,
+            title: "LOCAL",
+            subtitle: appModel.localPath.path,
+            entries: appModel.localEntries.map { .local($0) },
+            selection: Bindable(appModel).selectedLocalNames,
+            onRefresh: { Task { await appModel.refreshLocal() } },
+            onUp: { appModel.navigateLocalUp() },
+            onOpen: { entry in
+                if case let .local(local) = entry, local.isDirectory {
+                    appModel.openLocalDirectory(local.name)
+                }
+            },
+            onDropFromOpposite: { payload in
+                Task { await appModel.downloadDropped(fileNames: payload.fileNames) }
+            },
+            onNewFolder: { appModel.promptNewFolder(pane: .local) },
+            onRename: { appModel.promptRename(pane: .local, entryName: $0) },
+            onDelete: { Task { await appModel.deleteSelected(pane: .local) } },
+            onProperties: { appModel.promptProperties(pane: .local, entryName: $0) }
+        )
+    }
+
+    private var remotePane: some View {
+        FilePaneView(
+            paneSide: .remote,
+            title: "REMOTE",
+            subtitle: "\(appModel.draft.host):\(appModel.remotePath)",
+            entries: appModel.remoteEntries.map { .remote($0) },
+            selection: Bindable(appModel).selectedRemoteNames,
+            onRefresh: { Task { await appModel.refreshRemote() } },
+            onUp: { Task { await appModel.navigateRemoteUp() } },
+            onOpen: { entry in
+                if case let .remote(remote) = entry, remote.type == .directory {
+                    Task { await appModel.openRemoteDirectory(remote.name) }
+                }
+            },
+            onDropFromOpposite: { payload in
+                Task { await appModel.uploadDropped(fileNames: payload.fileNames) }
+            },
+            onNewFolder: { appModel.promptNewFolder(pane: .remote) },
+            onRename: { appModel.promptRename(pane: .remote, entryName: $0) },
+            onDelete: { Task { await appModel.deleteSelected(pane: .remote) } },
+            onProperties: { appModel.promptProperties(pane: .remote, entryName: $0) },
+            onQuickLook: { Task { await appModel.quickLookRemote() } },
+            onEdit: { Task { await appModel.editRemoteSelection() } },
+            onEditInternal: { Task { await appModel.editRemoteSelectionInternal() } }
+        )
+    }
+
     private var commanderToolbar: some View {
         HStack(spacing: 12) {
             Button("", systemImage: "arrow.up") {
@@ -190,6 +257,23 @@ struct CommanderView: View {
             }
 
             Button {
+                appModel.showTerminalPane.toggle()
+            } label: {
+                Label("Shell", systemImage: appModel.showTerminalPane ? "terminal.fill" : "terminal")
+            }
+
+            Button {
+                var settings = appModel.featureSettings
+                settings.uiLayoutMode = settings.uiLayoutMode == .commander ? .explorer : .commander
+                appModel.updateFeatureSettings(settings)
+            } label: {
+                Label(
+                    appModel.featureSettings.uiLayoutMode == .explorer ? "Explorer" : "Commander",
+                    systemImage: appModel.featureSettings.uiLayoutMode == .explorer ? "list.bullet.rectangle" : "rectangle.split.2x1"
+                )
+            }
+
+            Button {
                 appModel.toggleLiveSync()
             } label: {
                 Label(
@@ -202,7 +286,7 @@ struct CommanderView: View {
             Spacer()
             selectionSummary
 
-            Text("SFTP")
+            Text(appModel.draft.transferProtocol.rawValue.uppercased())
                 .font(.caption)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -233,7 +317,21 @@ struct CommanderView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
-            Text("\(appModel.remoteEntries.count) remote items")
+            if let launch = AppMetricsService.launchMilliseconds() {
+                Text("Launch \(launch) ms")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            if let connect = AppMetricsService.lastConnectMilliseconds() {
+                Text("Connect \(connect) ms")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            Image(systemName: "lock.fill")
+                .font(.caption2)
+                .foregroundStyle(.green)
+                .help("Encrypted session")
+            Text("\(appModel.remoteEntries.count) remote · queue \(appModel.transferQueue.jobs.count)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -300,6 +398,10 @@ struct FilePaneView: View {
     var onEdit: () -> Void = {}
     var onEditInternal: () -> Void = {}
 
+    @FocusState private var isFocused: Bool
+    @State private var typeAhead = ""
+    @State private var dropTargeted = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -313,15 +415,22 @@ struct FilePaneView: View {
                         .truncationMode(.middle)
                 }
                 Spacer()
+                if !typeAhead.isEmpty {
+                    Text("Find: \(typeAhead)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
                 Button("", systemImage: "folder.badge.plus") { onNewFolder() }
                     .help("New folder")
                 Button("", systemImage: "arrow.up.to.line") { onUp() }
+                    .help("Up")
+                    .keyboardShortcut(.upArrow, modifiers: .command)
                 Button("", systemImage: "arrow.clockwise") { onRefresh() }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             Divider()
-            List(entries, selection: $selection) { entry in
+            List(filteredEntries, selection: $selection) { entry in
                 row(for: entry)
                     .contextMenu {
                         Button("Rename") { onRename(entry.name) }
@@ -336,6 +445,11 @@ struct FilePaneView: View {
                     }
             }
             .listStyle(.plain)
+            .focusable()
+            .focused($isFocused)
+            .onKeyPress { press in
+                handleKeyPress(press)
+            }
         }
         .dropDestination(for: PaneDragPayload.self) { payloads, _ in
             guard let payload = payloads.first, paneSide.acceptsDrop(from: payload.side) else {
@@ -356,7 +470,39 @@ struct FilePaneView: View {
         }
     }
 
-    @State private var dropTargeted = false
+    private var filteredEntries: [PaneEntry] {
+        guard !typeAhead.isEmpty else { return entries }
+        return entries.filter { $0.name.localizedCaseInsensitiveContains(typeAhead) }
+    }
+
+    private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
+        if press.characters.count == 1, !press.modifiers.contains(.command) {
+            typeAhead += press.characters
+            if let match = entries.first(where: { $0.name.lowercased().hasPrefix(typeAhead.lowercased()) }) {
+                selection = [match.name]
+            }
+            return .handled
+        }
+        if press.key == .escape {
+            typeAhead = ""
+            return .handled
+        }
+        if press.key == .return, let name = selection.first, let entry = entries.first(where: { $0.name == name }) {
+            if entry.isDirectory { onOpen(entry) }
+            else if paneSide == .remote { onQuickLook() }
+            return .handled
+        }
+        if press.key == .downArrow, press.modifiers.contains(.command), let name = selection.first,
+           let entry = entries.first(where: { $0.name == name }), entry.isDirectory {
+            onOpen(entry)
+            return .handled
+        }
+        if press.key == .space, paneSide == .remote {
+            onQuickLook()
+            return .handled
+        }
+        return .ignored
+    }
 
     @ViewBuilder
     private func row(for entry: PaneEntry) -> some View {

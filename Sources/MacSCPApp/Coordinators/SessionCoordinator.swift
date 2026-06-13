@@ -74,7 +74,8 @@ final class SessionCoordinator {
             case .sftp:
                 let backendKind = SFTPBackendSelector.select(
                     authMethod: draft.authMethod,
-                    settings: transferSettings
+                    settings: transferSettings,
+                    advanced: session.advanced
                 )
                 SFTPBackendSelector.logSelection(backendKind, settings: transferSettings)
                 TransferNetworkTuning.logIntendedSettings(preset: transferSettings.preset)
@@ -97,8 +98,6 @@ final class SessionCoordinator {
                 let single = try TransferBackendFactory.make(for: session.protocol, backend: .citadel)
                 try await connectionService.connect(backend: single, configuration: session)
                 rawBackend = single
-            default:
-                throw BackendError.notImplemented(session.protocol.rawValue)
             }
 
             backend = rawBackend

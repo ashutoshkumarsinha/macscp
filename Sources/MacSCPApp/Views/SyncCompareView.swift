@@ -13,8 +13,16 @@ struct SyncCompareView: View {
             Picker("Direction", selection: Bindable(appModel).syncDirection) {
                 Text("Mirror local → remote").tag(SyncDirection.mirrorLocalToRemote)
                 Text("Mirror remote → local").tag(SyncDirection.mirrorRemoteToLocal)
+                Text("Bidirectional").tag(SyncDirection.bidirectional)
             }
             .pickerStyle(.radioGroup)
+
+            if appModel.syncDirection == .bidirectional {
+                Toggle("Delete extraneous files", isOn: Binding(
+                    get: { appModel.sync.deleteExtraneous },
+                    set: { appModel.sync.deleteExtraneous = $0 }
+                ))
+            }
 
             Toggle("Preview only (dry run)", isOn: $previewOnly)
 

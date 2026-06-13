@@ -46,6 +46,7 @@ public struct SyncCompareRow: Sendable, Equatable, Identifiable {
 public enum SyncDirection: Sendable {
     case mirrorLocalToRemote
     case mirrorRemoteToLocal
+    case bidirectional
 }
 
 public enum DirectorySyncEngine {
@@ -75,21 +76,65 @@ public enum DirectorySyncEngine {
         rows.filter { $0.status == .newRemote || $0.status == .newerRemote || $0.status == .sizeMismatch }
     }
 
+    public struct BidirectionalTransferPlan: Sendable, Equatable {
+        public var uploads: [DirectoryTransferFile]
+        public var downloads: [DirectoryTransferFile]
+        public var remoteDeletes: [String]
+        public var localDeletes: [URL]
+
+        public init(
+            uploads: [DirectoryTransferFile] = [],
+            downloads: [DirectoryTransferFile] = [],
+            remoteDeletes: [String] = [],
+            localDeletes: [URL] = []
+        ) {
+            self.uploads = uploads
+            self.downloads = downloads
+            self.remoteDeletes = remoteDeletes
+            self.localDeletes = localDeletes
+        }
+    }
+
     public static func toTransferFiles(
         rows: [SyncCompareRow],
         direction: SyncDirection
     ) -> [DirectoryTransferFile] {
         switch direction {
         case .mirrorLocalToRemote:
-            return rowsNeedingUpload(rows).compactMap { row in
-                guard let localURL = row.localURL, let remotePath = row.remotePath else { return nil }
-                return DirectoryTransferFile(localURL: localURL, remotePath: remotePath, totalBytes: row.localSize)
-            }
+            return uploads(from: rows)
         case .mirrorRemoteToLocal:
-            return rowsNeedingDownload(rows).compactMap { row in
-                guard let localURL = row.localURL, let remotePath = row.remotePath else { return nil }
-                return DirectoryTransferFile(localURL: localURL, remotePath: remotePath, totalBytes: row.remoteSize)
-            }
+            return downloads(from: rows)
+        case .bidirectional:
+            return uploads(from: rows) + downloads(from: rows)
+        }
+    }
+
+    public static func bidirectionalPlan(
+        rows: [SyncCompareRow],
+        deleteExtraneous: Bool
+    ) -> BidirectionalTransferPlan {
+        var plan = BidirectionalTransferPlan(
+            uploads: uploads(from: rows),
+            downloads: downloads(from: rows)
+        )
+        if deleteExtraneous {
+            plan.remoteDeletes = rows.filter { $0.status == .newLocal }.compactMap(\.remotePath)
+            plan.localDeletes = rows.filter { $0.status == .newRemote }.compactMap(\.localURL)
+        }
+        return plan
+    }
+
+    private static func uploads(from rows: [SyncCompareRow]) -> [DirectoryTransferFile] {
+        rowsNeedingUpload(rows).compactMap { row in
+            guard let localURL = row.localURL, let remotePath = row.remotePath else { return nil }
+            return DirectoryTransferFile(localURL: localURL, remotePath: remotePath, totalBytes: row.localSize)
+        }
+    }
+
+    private static func downloads(from rows: [SyncCompareRow]) -> [DirectoryTransferFile] {
+        rowsNeedingDownload(rows).compactMap { row in
+            guard let localURL = row.localURL, let remotePath = row.remotePath else { return nil }
+            return DirectoryTransferFile(localURL: localURL, remotePath: remotePath, totalBytes: row.remoteSize)
         }
     }
 

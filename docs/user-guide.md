@@ -511,14 +511,11 @@ end tell
 
 ## 13. What's Not in This Release
 
-The following remain **planned** (see [spec.md](spec.md)):
+The following remain **planned** or require distribution signing:
 
-- **Integrated** terminal pane (external Terminal / iTerm hand-off is supported)
-- Tabs and multiple sessions per window
-- Bidirectional / two-way sync (one-way compare + sync is supported)
-- ProxyJump / bastion UI
-- Master password for profile export encryption
-- App Sandbox + notarized Mac App Store build
+- **Mac App Store** build with full sandbox + notarized release pipeline
+- **ProxyJump** through Citadel (jump hosts use Traversio backend automatically)
+- **Full WinSCP script parity** (advanced `call`, `.NET`, tunnel UI)
 
 ---
 

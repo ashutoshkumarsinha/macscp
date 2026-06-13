@@ -53,4 +53,14 @@ final class Phase3FeatureTests: XCTestCase {
         XCTAssertEqual(layout.objectKey(for: "report.csv"), "data/report.csv")
         XCTAssertEqual(layout.remotePath(for: "data/report.csv"), "report.csv")
     }
+
+    func testBidirectionalPlanIncludesUploadsAndDownloads() {
+        let rows = [
+            SyncCompareRow(relativePath: "a.txt", status: .newerLocal, localURL: URL(fileURLWithPath: "/tmp/a"), remotePath: "/a.txt", localSize: 1),
+            SyncCompareRow(relativePath: "b.txt", status: .newerRemote, localURL: URL(fileURLWithPath: "/tmp/b"), remotePath: "/b.txt", remoteSize: 2),
+        ]
+        let plan = DirectorySyncEngine.bidirectionalPlan(rows: rows, deleteExtraneous: false)
+        XCTAssertEqual(plan.uploads.count, 1)
+        XCTAssertEqual(plan.downloads.count, 1)
+    }
 }

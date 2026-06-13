@@ -1,7 +1,4 @@
 // RemotePaneCoordinator.swift — Remote SFTP listing and path navigation.
-//
-// remotePath itself is owned by SessionCoordinator; this type mutates it via inout
-// when navigating up or into a subdirectory.
 
 import Foundation
 import MacSCPCore
@@ -26,20 +23,18 @@ final class RemotePaneCoordinator {
         }
     }
 
-    func navigateUp(remotePath: inout String) async -> String {
-        remotePath = (remotePath as NSString).deletingLastPathComponent
-        if remotePath.isEmpty { remotePath = "/" }
+    func navigateUp(from remotePath: String) -> String {
         selectedRemoteNames = []
-        return remotePath
+        var path = (remotePath as NSString).deletingLastPathComponent
+        if path.isEmpty { path = "/" }
+        return path
     }
 
-    func openDirectory(_ name: String, remotePath: inout String) -> String {
-        if remotePath.hasSuffix("/") {
-            remotePath += name
-        } else {
-            remotePath += "/" + name
-        }
+    func openDirectory(_ name: String, from remotePath: String) -> String {
         selectedRemoteNames = []
-        return remotePath
+        if remotePath.hasSuffix("/") {
+            return remotePath + name
+        }
+        return remotePath + "/" + name
     }
 }

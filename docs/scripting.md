@@ -208,7 +208,7 @@ exit
 
 Default: first failing command aborts script with that command's exit code.
 
-Phase 2 planned:
+Phase 2 planned (now shipped for `continue` / `failonnomatch`):
 
 ```text
 option continue on          # log errors, continue

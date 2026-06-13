@@ -20,6 +20,9 @@ struct SessionProfile: Identifiable, Codable, Equatable {
     var hostKeyFingerprint: String?
     var cloudRegion: String?
     var cloudBucket: String?
+    var proxyType: ProxyType = .none
+    var proxyHost: String?
+    var proxyPort: Int?
     var transferProtocol: TransferProtocol
     var favorite: Bool
 
@@ -27,6 +30,7 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         case id, name, group, host, port, username, authMethod, keyPath, initialRemotePath, favorite, hostKeyFingerprint
         case transferProtocol = "protocol"
         case cloudRegion, cloudBucket
+        case proxyType, proxyHost, proxyPort
         case password // legacy plaintext migration only
     }
 
@@ -45,6 +49,9 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         hostKeyFingerprint: String? = nil,
         cloudRegion: String? = nil,
         cloudBucket: String? = nil,
+        proxyType: ProxyType = .none,
+        proxyHost: String? = nil,
+        proxyPort: Int? = nil,
         transferProtocol: TransferProtocol = .sftp,
         favorite: Bool = false
     ) {
@@ -62,6 +69,9 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         self.hostKeyFingerprint = hostKeyFingerprint
         self.cloudRegion = cloudRegion
         self.cloudBucket = cloudBucket
+        self.proxyType = proxyType
+        self.proxyHost = proxyHost
+        self.proxyPort = proxyPort
         self.transferProtocol = transferProtocol
         self.favorite = favorite
     }
@@ -80,6 +90,9 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         hostKeyFingerprint = try container.decodeIfPresent(String.self, forKey: .hostKeyFingerprint)
         cloudRegion = try container.decodeIfPresent(String.self, forKey: .cloudRegion)
         cloudBucket = try container.decodeIfPresent(String.self, forKey: .cloudBucket)
+        proxyType = try container.decodeIfPresent(ProxyType.self, forKey: .proxyType) ?? .none
+        proxyHost = try container.decodeIfPresent(String.self, forKey: .proxyHost)
+        proxyPort = try container.decodeIfPresent(Int.self, forKey: .proxyPort)
         transferProtocol = try container.decodeIfPresent(TransferProtocol.self, forKey: .transferProtocol) ?? .sftp
         favorite = try container.decodeIfPresent(Bool.self, forKey: .favorite) ?? false
 
@@ -105,6 +118,9 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         try container.encodeIfPresent(hostKeyFingerprint, forKey: .hostKeyFingerprint)
         try container.encodeIfPresent(cloudRegion, forKey: .cloudRegion)
         try container.encodeIfPresent(cloudBucket, forKey: .cloudBucket)
+        try container.encode(proxyType, forKey: .proxyType)
+        try container.encodeIfPresent(proxyHost, forKey: .proxyHost)
+        try container.encodeIfPresent(proxyPort, forKey: .proxyPort)
         try container.encode(transferProtocol, forKey: .transferProtocol)
         try container.encode(favorite, forKey: .favorite)
     }
@@ -122,6 +138,11 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         }
         if let cloudBucket, !cloudBucket.isEmpty {
             advanced.cloudBucket = cloudBucket
+        }
+        if proxyType != .none {
+            advanced.proxyType = proxyType
+            advanced.proxyHost = proxyHost
+            advanced.proxyPort = proxyPort
         }
         return SessionConfiguration(
             id: id,

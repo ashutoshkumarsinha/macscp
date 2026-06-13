@@ -19,9 +19,10 @@ import MacSCPCore
 public enum SFTPBackendSelector {
     public static func select(
         authMethod: AuthMethod,
-        settings: MacSCPTransferSettings
+        settings: MacSCPTransferSettings,
+        advanced: AdvancedSettings = AdvancedSettings()
     ) -> SFTPBackendKind {
-        if authMethod == .agent {
+        if authMethod == .agent || advanced.proxyType == .jump {
             return .traversio
         }
         if settings.useTraversioForPerformance {

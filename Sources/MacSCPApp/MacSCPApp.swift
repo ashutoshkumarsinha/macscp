@@ -32,11 +32,19 @@ struct MacSCPApp: App {
             // Replace the default "New" menu item with our connection action.
             CommandGroup(replacing: .newItem) {
                 Button("New Connection") {
-                    // Show the login sheet even if already connected.
                     appModel.showLogin = true
                 }
-                // Keyboard shortcut: Shift+Command+N
                 .keyboardShortcut("n", modifiers: [.command, .shift])
+                Button("New Tab") {
+                    appModel.newTab()
+                }
+                .keyboardShortcut("t", modifiers: [.command])
+            }
+            CommandGroup(after: .windowList) {
+                Button("Close Tab") {
+                    Task { await appModel.closeSelectedTab() }
+                }
+                .keyboardShortcut("w", modifiers: [.command])
             }
         }
     }

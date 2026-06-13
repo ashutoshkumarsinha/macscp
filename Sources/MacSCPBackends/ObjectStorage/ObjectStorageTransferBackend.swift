@@ -169,35 +169,13 @@ public final class ObjectStorageTransferBackend: CapableTransferBackend, @unchec
     ) async throws -> TransferResult {
         let layout = try requireLayout()
         let credentials = try requireCredentials()
-        let key = layout.objectKey(for: remotePath)
-        let data = try Data(contentsOf: localURL)
-        let signed = try AWSSignatureV4.sign(
-            method: "PUT",
-            path: "/\(layout.bucket)/\(key)",
-            headers: ["content-type": "application/octet-stream"],
-            body: data,
+        return try await S3MultipartUpload.uploadFile(
+            localURL: localURL,
+            remotePath: remotePath,
+            layout: layout,
             credentials: credentials,
-            layout: layout
+            options: options
         )
-        var request = URLRequest(url: signed.url)
-        request.httpMethod = signed.method
-        signed.headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
-        request.httpBody = signed.body
-        let (_, response) = try await HTTPClient.data(for: request)
-        guard (200 ... 299).contains(response.statusCode) else {
-            throw BackendError.transferFailed("Upload failed (\(response.statusCode))")
-        }
-        options.progress?(
-            TransferProgress(
-                transferID: UUID(),
-                direction: .upload,
-                path: remotePath,
-                totalBytes: Int64(data.count),
-                transferredBytes: Int64(data.count),
-                bytesPerSecond: nil
-            )
-        )
-        return TransferResult(bytesTransferred: Int64(data.count), checksum: nil)
     }
 
     public func download(

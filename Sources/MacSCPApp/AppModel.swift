@@ -3,6 +3,7 @@
 // AppModel forwards state to views and implements TransferBackendProvider for the queue.
 // Business logic lives in Coordinators/ (profile, session, panes, transfers).
 
+import AppKit
 import Foundation
 import MacSCPCore
 import MacSCPBackends
@@ -13,9 +14,8 @@ import Observation
 @Observable
 final class AppModel: TransferBackendProvider {
     private let profileCoordinator = ProfileCoordinator()
-    private let sessionCoordinator = SessionCoordinator()
-    let localPane = LocalPaneCoordinator()
-    let remotePane = RemotePaneCoordinator()
+    private var workspaces: [SessionTabWorkspace] = [SessionTabWorkspace()]
+    private var selectedWorkspaceID: UUID?
     let transfers = TransferCoordinator()
     let fileOps = FileOperationsCoordinator()
     let sync = SyncCoordinator()
@@ -30,8 +30,33 @@ final class AppModel: TransferBackendProvider {
     var liveSyncEnabled = false
     var featureSettings = MacSCPFeatureSettings()
     var showTransferHistory = false
+    var showTerminalPane = false
     private var paneRefreshTask: Task<Void, Never>?
     private var hostKeyPollTask: Task<Void, Never>?
+
+    var workspacesForTabs: [SessionTabWorkspace] { workspaces }
+    var selectedTabID: UUID? {
+        get { selectedWorkspaceID ?? workspaces.first?.id }
+        set { selectedWorkspaceID = newValue }
+    }
+
+    private var activeWorkspace: SessionTabWorkspace {
+        if let id = selectedWorkspaceID, let match = workspaces.first(where: { $0.id == id }) {
+            return match
+        }
+        if let first = workspaces.first {
+            selectedWorkspaceID = first.id
+            return first
+        }
+        let created = SessionTabWorkspace()
+        workspaces = [created]
+        selectedWorkspaceID = created.id
+        return created
+    }
+
+    private var sessionCoordinator: SessionCoordinator { activeWorkspace.sessionCoordinator }
+    var localPane: LocalPaneCoordinator { activeWorkspace.localPane }
+    var remotePane: RemotePaneCoordinator { activeWorkspace.remotePane }
 
     var currentBackend: TransferBackend? { sessionCoordinator.backend }
 
@@ -156,6 +181,9 @@ final class AppModel: TransferBackendProvider {
 
     init() {
         wireCoordinators()
+        for workspace in workspaces {
+            wireWorkspace(workspace)
+        }
 
         if let settings = try? MacSCPConfiguration.loadSettings(
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser
@@ -172,26 +200,22 @@ final class AppModel: TransferBackendProvider {
         transfers.bind(backendProvider: self)
         Task { await HostKeyTrustGate.shared.setMode(.interactive) }
         Task { await refreshLocal() }
+        AppMetricsService.recordLaunchComplete()
         MacSCPLogger.shared.info("MacSCP started (profiles: \(profiles.count))", category: .app)
     }
 
-    private func wireCoordinators() {
-        // Route coordinator status updates into the single status bar string.
+    private func wireWorkspace(_ workspace: SessionTabWorkspace) {
         let setStatus: (String) -> Void = { [weak self] message in
             self?.statusMessage = message
         }
-
-        profileCoordinator.onStatusMessage = setStatus
-        sessionCoordinator.onStatusMessage = setStatus
-        remotePane.onStatusMessage = setStatus
-        transfers.onStatusMessage = setStatus
-        fileOps.onStatusMessage = setStatus
-        sync.onStatusMessage = setStatus
-
-        sessionCoordinator.onConnected = { [weak self] in
+        workspace.sessionCoordinator.onStatusMessage = setStatus
+        workspace.remotePane.onStatusMessage = setStatus
+        workspace.sessionCoordinator.onConnected = { [weak self] in
+            guard self?.activeWorkspace.id == workspace.id else { return }
             await self?.refreshRemote()
             if let name = self?.activeSessionName {
                 self?.transfers.setActiveSessionName(name)
+                workspace.title = name
             }
             if let localPath = self?.localPath.absoluteString {
                 var folders = MacSCPSharedSettingsStore.syncedFolders()
@@ -202,8 +226,8 @@ final class AppModel: TransferBackendProvider {
             }
             MacSCPSharedSettingsStore.setActiveProfileName(self?.activeSessionName ?? "")
         }
-
-        sessionCoordinator.onDisconnected = { [weak self] in
+        workspace.sessionCoordinator.onDisconnected = { [weak self] in
+            guard self?.activeWorkspace.id == workspace.id else { return }
             self?.transfers.handleDisconnect()
             self?.liveSync.stop()
             self?.liveSyncEnabled = false
@@ -213,13 +237,45 @@ final class AppModel: TransferBackendProvider {
             self?.paneRefreshTask = nil
             self?.hostKeyPollTask?.cancel()
             self?.hostKeyPollTask = nil
-            self?.remotePane.remoteEntries = []
-            self?.remotePane.selectedRemoteNames = []
+            workspace.remotePane.remoteEntries = []
+            workspace.remotePane.selectedRemoteNames = []
         }
+    }
+
+    private func wireCoordinators() {
+        // Route coordinator status updates into the single status bar string.
+        let setStatus: (String) -> Void = { [weak self] message in
+            self?.statusMessage = message
+        }
+
+        profileCoordinator.onStatusMessage = setStatus
+        transfers.onStatusMessage = setStatus
+        fileOps.onStatusMessage = setStatus
+        sync.onStatusMessage = setStatus
 
         transfers.onTransferComplete = { [weak self] jobID in
             self?.schedulePaneRefresh(afterJobID: jobID)
         }
+    }
+
+    func newTab() {
+        let workspace = SessionTabWorkspace()
+        workspaces.append(workspace)
+        wireWorkspace(workspace)
+        selectedWorkspaceID = workspace.id
+        showLogin = true
+    }
+
+    func closeSelectedTab() async {
+        guard workspaces.count > 1, let id = selectedTabID,
+              let index = workspaces.firstIndex(where: { $0.id == id }) else { return }
+        await workspaces[index].sessionCoordinator.disconnect()
+        workspaces.remove(at: index)
+        selectedWorkspaceID = workspaces.first?.id
+    }
+
+    func selectTab(_ id: UUID) {
+        selectedWorkspaceID = id
     }
 
     func syncDraftFromSelection() { profileCoordinator.syncDraftFromSelection() }
@@ -242,8 +298,12 @@ final class AppModel: TransferBackendProvider {
             return
         }
         startHostKeyPolling()
+        let started = Date()
         await sessionCoordinator.connect(using: profileCoordinator.draft)
         stopHostKeyPolling()
+        if isConnected {
+            AppMetricsService.recordConnect(durationMs: Int(Date().timeIntervalSince(started) * 1000))
+        }
     }
 
     func handleIncomingURL(_ url: URL) async {
@@ -330,14 +390,36 @@ final class AppModel: TransferBackendProvider {
     func navigateLocalUp() { localPane.navigateUp() }
 
     func navigateRemoteUp() async {
-        _ = await remotePane.navigateUp(remotePath: &sessionCoordinator.remotePath)
+        sessionCoordinator.remotePath = remotePane.navigateUp(from: sessionCoordinator.remotePath)
         await refreshRemote()
     }
 
     func openLocalDirectory(_ name: String) { localPane.openDirectory(name) }
 
+    func chooseLocalFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            localPath = url
+            SecurityScopedBookmarkStore.saveBookmark(for: url)
+            Task { await refreshLocal() }
+        }
+    }
+
+    func exportEncryptedProfiles(to url: URL, password: String) throws {
+        guard MasterPasswordService.verify(password) else {
+            throw ProfileExportError.wrongPassword
+        }
+        let payload = try JSONEncoder().encode(profiles)
+        let encrypted = try ProfileExportService.exportEncryptedJSON(data: payload, password: password)
+        try encrypted.write(to: url, options: .atomic)
+        statusMessage = "Exported encrypted profiles"
+    }
+
     func openRemoteDirectory(_ name: String) async {
-        _ = remotePane.openDirectory(name, remotePath: &sessionCoordinator.remotePath)
+        sessionCoordinator.remotePath = remotePane.openDirectory(name, from: sessionCoordinator.remotePath)
         await refreshRemote()
     }
 
@@ -426,7 +508,12 @@ final class AppModel: TransferBackendProvider {
     }
 
     func runSync(previewOnly: Bool) {
-        sync.enqueueSync(transferCoordinator: transfers, previewOnly: previewOnly)
+        sync.enqueueSync(
+            transferCoordinator: transfers,
+            fileOps: fileOps,
+            backend: currentBackend,
+            previewOnly: previewOnly
+        )
     }
 
     func openTerminal() {
@@ -660,6 +747,9 @@ struct SessionProfileDraft: Equatable {
     var transferProtocol: TransferProtocol = .sftp
     var cloudRegion: String = ""
     var cloudBucket: String = ""
+    var proxyType: ProxyType = .none
+    var proxyHost: String = ""
+    var proxyPort: String = ""
     var initialRemotePath: String = "/"
     var hostKeyFingerprint: String = ""
 
@@ -677,6 +767,9 @@ struct SessionProfileDraft: Equatable {
         transferProtocol = profile.transferProtocol
         cloudRegion = profile.cloudRegion ?? ""
         cloudBucket = profile.cloudBucket ?? ""
+        proxyType = profile.proxyType
+        proxyHost = profile.proxyHost ?? ""
+        proxyPort = profile.proxyPort.map(String.init) ?? ""
         initialRemotePath = profile.initialRemotePath
         hostKeyFingerprint = profile.hostKeyFingerprint ?? ""
     }
@@ -701,6 +794,9 @@ struct SessionProfileDraft: Equatable {
             hostKeyFingerprint: hostKeyFingerprint.isEmpty ? nil : hostKeyFingerprint,
             cloudRegion: cloudRegion.isEmpty ? nil : cloudRegion,
             cloudBucket: cloudBucket.isEmpty ? nil : cloudBucket,
+            proxyType: proxyType,
+            proxyHost: proxyHost.isEmpty ? nil : proxyHost,
+            proxyPort: Int(proxyPort),
             transferProtocol: transferProtocol
         )
     }

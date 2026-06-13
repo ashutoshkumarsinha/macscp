@@ -17,6 +17,16 @@ final class MacSCPFinderSync: FIFinderSync {
         }
     }
 
+    override func badgeIdentifier(for url: URL) -> String? {
+        guard let folders = UserDefaults(suiteName: SharedKeys.appGroupID)?
+            .stringArray(forKey: "syncedFolders") else { return nil }
+        let path = url.standardizedFileURL.path
+        if folders.contains(where: { path.hasPrefix(URL(string: $0)?.standardizedFileURL.path ?? "") }) {
+            return "Synced"
+        }
+        return nil
+    }
+
     override func menu(for menuKind: FIMenuKind) -> NSMenu? {
         guard menuKind == .contextualMenuForItems || menuKind == .contextualMenuForContainer else {
             return nil
