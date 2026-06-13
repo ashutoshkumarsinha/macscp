@@ -26,7 +26,10 @@ final class AppModel: TransferBackendProvider {
     var hostKeyPrompt: HostKeyTrustRequest?
     var namePrompt: NamePromptState?
     var propertiesPrompt: PropertiesPromptState?
+    var internalEditor: InternalEditorState?
     var liveSyncEnabled = false
+    var featureSettings = MacSCPFeatureSettings()
+    var showTransferHistory = false
     private var paneRefreshTask: Task<Void, Never>?
     private var hostKeyPollTask: Task<Void, Never>?
 
@@ -141,6 +144,16 @@ final class AppModel: TransferBackendProvider {
         var permissionsOctal: String
     }
 
+    struct InternalEditorState: Identifiable {
+        var id = UUID()
+        var snapshot: InternalEditorSnapshot
+        var text: String
+        var encoding: TextFileEncoding
+        var lineEnding: TextLineEnding
+        var isSaving = false
+        var errorMessage: String?
+    }
+
     init() {
         wireCoordinators()
 
@@ -149,7 +162,12 @@ final class AppModel: TransferBackendProvider {
         ) {
             sessionCoordinator.applyTransferSettings(settings.transfer)
             transfers.applyTransferSettings(settings.transfer)
+            transfers.applyFeatureSettings(settings.features)
+            featureSettings = settings.features
+            ICloudProfileSyncService.setEnabled(settings.features.iCloudProfileSyncEnabled)
         }
+
+        ICloudProfileSyncService.pullAndMerge(into: &profileCoordinator.profiles)
 
         transfers.bind(backendProvider: self)
         Task { await HostKeyTrustGate.shared.setMode(.interactive) }
@@ -172,6 +190,17 @@ final class AppModel: TransferBackendProvider {
 
         sessionCoordinator.onConnected = { [weak self] in
             await self?.refreshRemote()
+            if let name = self?.activeSessionName {
+                self?.transfers.setActiveSessionName(name)
+            }
+            if let localPath = self?.localPath.absoluteString {
+                var folders = MacSCPSharedSettingsStore.syncedFolders()
+                if !folders.contains(localPath) {
+                    folders.append(localPath)
+                    MacSCPSharedSettingsStore.setSyncedFolders(folders)
+                }
+            }
+            MacSCPSharedSettingsStore.setActiveProfileName(self?.activeSessionName ?? "")
         }
 
         sessionCoordinator.onDisconnected = { [weak self] in
@@ -179,6 +208,7 @@ final class AppModel: TransferBackendProvider {
             self?.liveSync.stop()
             self?.liveSyncEnabled = false
             self?.remoteEditor.stopAll()
+            self?.internalEditor = nil
             self?.paneRefreshTask?.cancel()
             self?.paneRefreshTask = nil
             self?.hostKeyPollTask?.cancel()
@@ -197,6 +227,15 @@ final class AppModel: TransferBackendProvider {
     func deleteProfile(id: UUID) { profileCoordinator.deleteProfile(id: id) }
     func saveDraftAsProfile() { _ = profileCoordinator.saveDraftAsProfile() }
 
+    func updateFeatureSettings(_ settings: MacSCPFeatureSettings) {
+        featureSettings = settings
+        transfers.applyFeatureSettings(settings)
+        try? MacSCPConfiguration.saveFeatureSettings(
+            settings,
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        )
+    }
+
     func connect() async {
         guard await AppLockService.authenticate(reason: "Unlock MacSCP to connect") else {
             statusMessage = "Authentication required"
@@ -205,6 +244,52 @@ final class AppModel: TransferBackendProvider {
         startHostKeyPolling()
         await sessionCoordinator.connect(using: profileCoordinator.draft)
         stopHostKeyPolling()
+    }
+
+    func handleIncomingURL(_ url: URL) async {
+        do {
+            if url.scheme?.lowercased() == "macscp",
+               url.host?.lowercased() == "upload",
+               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               let pathsValue = components.queryItems?.first(where: { $0.name == "paths" })?.value {
+                let decoded = pathsValue.removingPercentEncoding ?? pathsValue
+                let paths = decoded.split(separator: "\n").map { String($0) }.filter { !$0.isEmpty }
+                guard !paths.isEmpty else { return }
+                if !isConnected {
+                    statusMessage = "Connect to a session before uploading from Finder"
+                    showLogin = true
+                    return
+                }
+                await uploadAbsolutePaths(paths)
+                return
+            }
+
+            if url.scheme?.lowercased() == "macscp",
+               url.host?.lowercased() == "open",
+               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               let sessionID = components.queryItems?.first(where: { $0.name == "session" })?.value,
+               let uuid = UUID(uuidString: sessionID),
+               let profile = profiles.first(where: { $0.id == uuid }) {
+                selectedProfileID = profile.id
+                draft = SessionProfileDraft(from: profile)
+                await connect()
+                return
+            }
+
+            let connection = try ConnectionURL.parse(url.absoluteString)
+            draft = SessionProfileDraft()
+            draft.host = connection.host
+            draft.port = String(connection.port)
+            draft.username = connection.username
+            draft.password = connection.password ?? ""
+            draft.transferProtocol = connection.transferProtocol
+            draft.authMethod = connection.authMethod
+            draft.keyPath = connection.keyPath ?? "~/.ssh/id_ed25519"
+            draft.initialRemotePath = connection.path
+            await connect()
+        } catch {
+            statusMessage = error.localizedDescription
+        }
     }
 
     func respondHostKey(trusted: Bool) {
@@ -263,6 +348,36 @@ final class AppModel: TransferBackendProvider {
             remoteEntries: remotePane.remoteEntries,
             isConnected: sessionCoordinator.isConnected
         )
+    }
+
+    func uploadAbsolutePaths(_ paths: [String]) async {
+        guard sessionCoordinator.isConnected else { return }
+        for path in paths {
+            let localURL = URL(fileURLWithPath: NSString(string: path).expandingTildeInPath)
+            guard FileManager.default.fileExists(atPath: localURL.path) else { continue }
+            let attrs = try? FileManager.default.attributesOfItem(atPath: localURL.path)
+            let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+            let remotePath = SFTPPathJoin.joinRemote(sessionCoordinator.remotePath, localURL.lastPathComponent)
+            if (attrs?[.type] as? FileAttributeType) == .typeDirectory {
+                do {
+                    let files = try DirectoryTransferPlanner.expandLocalDirectory(
+                        at: localURL,
+                        remoteBase: remotePath
+                    )
+                    transfers.enqueueSyncUpload(files: files)
+                } catch {
+                    statusMessage = "Failed to scan \(localURL.lastPathComponent): \(error.localizedDescription)"
+                }
+            } else {
+                transferQueue.enqueueUpload(
+                    localURL: localURL,
+                    remotePath: remotePath,
+                    totalBytes: size,
+                    overwritePolicy: .overwrite
+                )
+            }
+        }
+        statusMessage = "Queued \(paths.count) Finder upload(s)"
     }
 
     func downloadSelected() async {
@@ -354,6 +469,60 @@ final class AppModel: TransferBackendProvider {
             backend: backend,
             onStatus: { [weak self] message in self?.statusMessage = message }
         )
+    }
+
+    func editRemoteSelectionInternal() async {
+        guard let name = remotePane.selectedRemoteNames.first,
+              let entry = remotePane.remoteEntries.first(where: { $0.name == name }),
+              let backend = sessionCoordinator.backend else { return }
+
+        statusMessage = "Loading \(entry.name)…"
+        do {
+            let snapshot = try await InternalEditorService.loadRemoteFile(entry: entry, backend: backend)
+            internalEditor = InternalEditorState(
+                snapshot: snapshot,
+                text: snapshot.text,
+                encoding: snapshot.encoding,
+                lineEnding: snapshot.lineEnding
+            )
+            statusMessage = "Editing \(entry.name)"
+        } catch {
+            statusMessage = "Edit failed: \(error.localizedDescription)"
+        }
+    }
+
+    func saveInternalEditor(conflictPolicy: InternalEditorConflictPolicy = .prompt) async {
+        guard var editor = internalEditor,
+              let backend = sessionCoordinator.backend else { return }
+
+        editor.isSaving = true
+        editor.errorMessage = nil
+        internalEditor = editor
+
+        do {
+            try await InternalEditorService.saveRemoteFile(
+                snapshot: editor.snapshot,
+                text: editor.text,
+                encoding: editor.encoding,
+                lineEnding: editor.lineEnding,
+                backend: backend,
+                conflictPolicy: conflictPolicy
+            )
+            internalEditor = nil
+            statusMessage = "Saved \(editor.snapshot.fileName)"
+            await refreshRemote()
+        } catch {
+            editor.isSaving = false
+            editor.errorMessage = error.localizedDescription
+            internalEditor = editor
+            if conflictPolicy == .overwrite {
+                statusMessage = "Save failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func cancelInternalEditor() {
+        internalEditor = nil
     }
 
     func promptNewFolder(pane: FilePaneSide) {
@@ -486,7 +655,11 @@ struct SessionProfileDraft: Equatable {
     var username: String = ""
     var password: String = ""
     var keyPath: String = "~/.ssh/id_ed25519"
+    var keyPassphrase: String = ""
     var authMethod: AuthMethod = .publicKey
+    var transferProtocol: TransferProtocol = .sftp
+    var cloudRegion: String = ""
+    var cloudBucket: String = ""
     var initialRemotePath: String = "/"
     var hostKeyFingerprint: String = ""
 
@@ -499,7 +672,11 @@ struct SessionProfileDraft: Equatable {
         username = profile.username
         password = profile.password ?? ""
         keyPath = profile.keyPath ?? "~/.ssh/id_ed25519"
+        keyPassphrase = profile.keyPassphrase ?? ""
         authMethod = profile.authMethod
+        transferProtocol = profile.transferProtocol
+        cloudRegion = profile.cloudRegion ?? ""
+        cloudBucket = profile.cloudBucket ?? ""
         initialRemotePath = profile.initialRemotePath
         hostKeyFingerprint = profile.hostKeyFingerprint ?? ""
     }
@@ -519,8 +696,12 @@ struct SessionProfileDraft: Equatable {
             password: authMethod == .password ? (password.isEmpty ? nil : password) : nil,
             authMethod: authMethod,
             keyPath: authMethod == .publicKey ? keyPath : nil,
+            keyPassphrase: authMethod == .publicKey ? (keyPassphrase.isEmpty ? nil : keyPassphrase) : nil,
             initialRemotePath: initialRemotePath,
-            hostKeyFingerprint: hostKeyFingerprint.isEmpty ? nil : hostKeyFingerprint
+            hostKeyFingerprint: hostKeyFingerprint.isEmpty ? nil : hostKeyFingerprint,
+            cloudRegion: cloudRegion.isEmpty ? nil : cloudRegion,
+            cloudBucket: cloudBucket.isEmpty ? nil : cloudBucket,
+            transferProtocol: transferProtocol
         )
     }
 

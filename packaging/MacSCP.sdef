@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<dictionary>
+    <suite name="MacSCP Scripting" code="McSC" description="Script MacSCP transfers and sessions.">
+        <command name="connect" code="McSCconn" description="Connect to a saved session profile by name.">
+            <direct-parameter type="text" description="Profile name"/>
+        </command>
+        <command name="disconnect" code="McSCdisc" description="Disconnect the active session."/>
+        <command name="upload" code="McSCupld" description="Upload a local file to the active session.">
+            <parameter name="local path" code="locP" type="text" description="Local file path">
+                <cocoa key="localPath"/>
+            </parameter>
+            <parameter name="remote path" code="remP" type="text" description="Remote destination path">
+                <cocoa key="remotePath"/>
+            </parameter>
+        </command>
+        <command name="download" code="McSCdnld" description="Download a remote file from the active session.">
+            <parameter name="remote path" code="remP" type="text" description="Remote source path">
+                <cocoa key="remotePath"/>
+            </parameter>
+            <parameter name="local path" code="locP" type="text" description="Local destination path">
+                <cocoa key="localPath"/>
+            </parameter>
+        </command>
+    </suite>
+</dictionary>

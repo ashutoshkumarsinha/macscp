@@ -53,7 +53,8 @@ struct CommanderView: View {
                     onDelete: { Task { await appModel.deleteSelected(pane: .remote) } },
                     onProperties: { appModel.promptProperties(pane: .remote, entryName: $0) },
                     onQuickLook: { Task { await appModel.quickLookRemote() } },
-                    onEdit: { Task { await appModel.editRemoteSelection() } }
+                    onEdit: { Task { await appModel.editRemoteSelection() } },
+                    onEditInternal: { Task { await appModel.editRemoteSelectionInternal() } }
                 )
             }
             Divider()
@@ -95,7 +96,39 @@ struct CommanderView: View {
         .sheet(isPresented: Bindable(appModel).showSyncSheet) {
             SyncCompareView()
         }
+        .sheet(item: Bindable(appModel).internalEditor) { editor in
+            InternalEditorView(
+                fileName: editor.snapshot.fileName,
+                text: Binding(
+                    get: { appModel.internalEditor?.text ?? editor.text },
+                    set: { appModel.internalEditor?.text = $0 }
+                ),
+                encoding: Binding(
+                    get: { appModel.internalEditor?.encoding ?? editor.encoding },
+                    set: { appModel.internalEditor?.encoding = $0 }
+                ),
+                lineEnding: Binding(
+                    get: { appModel.internalEditor?.lineEnding ?? editor.lineEnding },
+                    set: { appModel.internalEditor?.lineEnding = $0 }
+                ),
+                isSaving: editor.isSaving,
+                errorMessage: editor.errorMessage,
+                onSave: { Task { await appModel.saveInternalEditor() } },
+                onSaveAnyway: { Task { await appModel.saveInternalEditor(conflictPolicy: .overwrite) } },
+                onCancel: { appModel.cancelInternalEditor() }
+            )
+        }
+        .sheet(isPresented: Bindable(appModel).showTransferHistory) {
+            TransferHistoryView()
+        }
         .toolbar {
+            ToolbarItem(placement: .automatic) {
+                Button("History") {
+                    appModel.showTransferHistory = true
+                }
+                .disabled(!appModel.featureSettings.transferHistoryEnabled)
+                .help("View local transfer history")
+            }
             ToolbarItem(placement: .automatic) {
                 if appModel.transferQueue.activeCount > 0 {
                     Text("Queue: \(appModel.transferQueue.activeCount)")
@@ -265,6 +298,7 @@ struct FilePaneView: View {
     var onProperties: (String) -> Void = { _ in }
     var onQuickLook: () -> Void = {}
     var onEdit: () -> Void = {}
+    var onEditInternal: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -294,6 +328,7 @@ struct FilePaneView: View {
                         Button("Properties") { onProperties(entry.name) }
                         if paneSide == .remote && !entry.isDirectory {
                             Button("Quick Look") { onQuickLook() }
+                            Button("Edit with Internal Editor") { onEditInternal() }
                             Button("Edit with External Editor") { onEdit() }
                         }
                         Divider()

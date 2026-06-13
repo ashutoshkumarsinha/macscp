@@ -35,6 +35,7 @@ let package = Package(
                 "MacSCPCore",
                 .product(name: "Citadel", package: "Citadel"),
                 .product(name: "Traversio", package: "Traversio"),
+                .product(name: "Crypto", package: "swift-crypto"),
             ]
         ),
         .executableTarget(

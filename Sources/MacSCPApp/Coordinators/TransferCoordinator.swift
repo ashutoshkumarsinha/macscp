@@ -19,8 +19,47 @@ final class TransferCoordinator {
     /// AppModel uses this to debounce pane refresh after jobs finish.
     var onTransferComplete: ((UUID) -> Void)?
 
+    private var featureSettings = MacSCPFeatureSettings()
+    private var activeSessionName = ""
+    private let homeDirectory = FileManager.default.homeDirectoryForCurrentUser
+
     func bind(backendProvider: TransferBackendProvider) {
         transferQueue.bind(backendProvider: backendProvider)
+        transferQueue.onQueueIdle = { [weak self] jobs in
+            self?.handleQueueIdle(jobs: jobs)
+        }
+    }
+
+    func applyFeatureSettings(_ settings: MacSCPFeatureSettings) {
+        featureSettings = settings
+        ICloudProfileSyncService.setEnabled(settings.iCloudProfileSyncEnabled)
+    }
+
+    func setActiveSessionName(_ name: String) {
+        activeSessionName = name
+    }
+
+    private func handleQueueIdle(jobs: [TransferJob]) {
+        if featureSettings.transferHistoryEnabled {
+            for job in jobs {
+                TransferHistoryRecorder.record(job: job, sessionName: activeSessionName, homeDirectory: homeDirectory)
+            }
+        }
+        if featureSettings.notifyOnQueueComplete {
+            let completed = jobs.filter {
+                if case .completed = $0.state { return true }
+                if case .skipped = $0.state { return true }
+                return false
+            }.count
+            let failed = jobs.filter { if case .failed = $0.state { return true }; return false }.count
+            Task {
+                await TransferNotificationService.requestAuthorizationIfNeeded()
+                await TransferNotificationService.notifyQueueComplete(
+                    failedCount: failed,
+                    completedCount: completed
+                )
+            }
+        }
     }
 
     func applyTransferSettings(_ settings: MacSCPTransferSettings) {

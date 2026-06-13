@@ -8,15 +8,16 @@ enum CLIActions {
         if batch {
             await HostKeyTrustGate.shared.setMode(.batchStrict)
         }
-        let parsed: SFTPConnectionURL
+        let parsed: ConnectionURL
         do {
-            parsed = try SFTPConnectionURL.parse(url)
+            parsed = try ConnectionURL.parse(url)
         } catch {
-            throw CLIError.usage("Expected sftp://user@host/path URL")
+            throw CLIError.usage("Expected sftp://, scp://, ftp://, or ftps:// URL")
         }
         var auth = parsed.authMethod
         if agent { auth = .agent }
         let config = CLISessionBuilder.configuration(
+            transferProtocol: parsed.transferProtocol,
             host: parsed.host,
             port: parsed.port,
             username: parsed.username,
@@ -24,7 +25,8 @@ enum CLIActions {
             keyPath: parsed.keyPath.map { NSString(string: $0).expandingTildeInPath },
             authMethod: auth,
             remotePath: parsed.path,
-            hostKeyFingerprint: hostkey
+            hostKeyFingerprint: hostkey,
+            implicitTLS: parsed.implicitTLS
         )
         do {
             try await CLISessionStore.shared.connect(config)

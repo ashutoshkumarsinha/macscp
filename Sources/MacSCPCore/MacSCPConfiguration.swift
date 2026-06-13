@@ -71,13 +71,16 @@ public struct MacSCPTransferSettings: Sendable, Equatable {
 public struct MacSCPAppSettings: Sendable, Equatable {
     public var logging: MacSCPLoggingSettings
     public var transfer: MacSCPTransferSettings
+    public var features: MacSCPFeatureSettings
 
     public init(
         logging: MacSCPLoggingSettings = MacSCPLoggingSettings(),
-        transfer: MacSCPTransferSettings = MacSCPTransferSettings()
+        transfer: MacSCPTransferSettings = MacSCPTransferSettings(),
+        features: MacSCPFeatureSettings = MacSCPFeatureSettings()
     ) {
         self.logging = logging
         self.transfer = transfer
+        self.features = features
     }
 }
 
@@ -110,6 +113,11 @@ chunk_size = \(transfer.chunkSize)
 resume = true
 verify_checksums = false
 use_traversio_for_performance = false
+
+[app]
+transfer_history = false
+notify_on_queue_complete = false
+icloud_profile_sync = false
 
 # Apple Silicon tuned preset (also available: lan, wan, apple_silicon):
 # preset = "apple_silicon"
@@ -152,6 +160,38 @@ use_traversio_for_performance = false
         try loadSettings(homeDirectory: homeDirectory).logging
     }
 
+    public static func saveFeatureSettings(_ features: MacSCPFeatureSettings, homeDirectory: URL) throws {
+        _ = try loadSettings(homeDirectory: homeDirectory)
+        let configURL = configURL(homeDirectory: homeDirectory)
+        var lines = try String(contentsOf: configURL, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+
+        let featureLines = [
+            "[app]",
+            "transfer_history = \(features.transferHistoryEnabled)",
+            "notify_on_queue_complete = \(features.notifyOnQueueComplete)",
+            "icloud_profile_sync = \(features.iCloudProfileSyncEnabled)",
+        ]
+
+        if let start = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "[app]" }) {
+            var end = start + 1
+            while end < lines.count {
+                let trimmed = lines[end].trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") { break }
+                end += 1
+            }
+            lines.replaceSubrange(start ..< end, with: featureLines)
+        } else {
+            if lines.last?.isEmpty != false {
+                lines.append("")
+            }
+            lines.append(contentsOf: featureLines)
+        }
+
+        try lines.joined(separator: "\n").write(to: configURL, atomically: true, encoding: .utf8)
+    }
+
     static func parseSettings(from contents: String) -> MacSCPAppSettings {
         var settings = MacSCPAppSettings()
         var section: String?
@@ -176,6 +216,8 @@ use_traversio_for_performance = false
                 applyLoggingKey(key, value: value, to: &settings.logging)
             case "transfer":
                 applyTransferKey(key, value: value, to: &settings.transfer)
+            case "app":
+                applyFeatureKey(key, value: value, to: &settings.features)
             default:
                 break
             }
@@ -266,6 +308,23 @@ use_traversio_for_performance = false
             Self.applyPreset(parsed, to: &settings)
         case "use_traversio_for_performance":
             settings.useTraversioForPerformance = parseBool(value) ?? settings.useTraversioForPerformance
+        default:
+            break
+        }
+    }
+
+    private static func applyFeatureKey(
+        _ key: String,
+        value: String,
+        to settings: inout MacSCPFeatureSettings
+    ) {
+        switch key {
+        case "transfer_history":
+            settings.transferHistoryEnabled = parseBool(value) ?? settings.transferHistoryEnabled
+        case "notify_on_queue_complete":
+            settings.notifyOnQueueComplete = parseBool(value) ?? settings.notifyOnQueueComplete
+        case "icloud_profile_sync":
+            settings.iCloudProfileSyncEnabled = parseBool(value) ?? settings.iCloudProfileSyncEnabled
         default:
             break
         }

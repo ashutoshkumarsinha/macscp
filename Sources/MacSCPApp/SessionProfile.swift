@@ -15,12 +15,18 @@ struct SessionProfile: Identifiable, Codable, Equatable {
     var password: String?
     var authMethod: AuthMethod
     var keyPath: String?
+    var keyPassphrase: String?
     var initialRemotePath: String
     var hostKeyFingerprint: String?
+    var cloudRegion: String?
+    var cloudBucket: String?
+    var transferProtocol: TransferProtocol
     var favorite: Bool
 
     private enum CodingKeys: String, CodingKey {
         case id, name, group, host, port, username, authMethod, keyPath, initialRemotePath, favorite, hostKeyFingerprint
+        case transferProtocol = "protocol"
+        case cloudRegion, cloudBucket
         case password // legacy plaintext migration only
     }
 
@@ -34,8 +40,12 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         password: String? = nil,
         authMethod: AuthMethod = .publicKey,
         keyPath: String? = nil,
+        keyPassphrase: String? = nil,
         initialRemotePath: String = "/",
         hostKeyFingerprint: String? = nil,
+        cloudRegion: String? = nil,
+        cloudBucket: String? = nil,
+        transferProtocol: TransferProtocol = .sftp,
         favorite: Bool = false
     ) {
         self.id = id
@@ -47,8 +57,12 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         self.password = password
         self.authMethod = authMethod
         self.keyPath = keyPath
+        self.keyPassphrase = keyPassphrase
         self.initialRemotePath = initialRemotePath
         self.hostKeyFingerprint = hostKeyFingerprint
+        self.cloudRegion = cloudRegion
+        self.cloudBucket = cloudBucket
+        self.transferProtocol = transferProtocol
         self.favorite = favorite
     }
 
@@ -64,6 +78,9 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         keyPath = try container.decodeIfPresent(String.self, forKey: .keyPath)
         initialRemotePath = try container.decodeIfPresent(String.self, forKey: .initialRemotePath) ?? "/"
         hostKeyFingerprint = try container.decodeIfPresent(String.self, forKey: .hostKeyFingerprint)
+        cloudRegion = try container.decodeIfPresent(String.self, forKey: .cloudRegion)
+        cloudBucket = try container.decodeIfPresent(String.self, forKey: .cloudBucket)
+        transferProtocol = try container.decodeIfPresent(TransferProtocol.self, forKey: .transferProtocol) ?? .sftp
         favorite = try container.decodeIfPresent(Bool.self, forKey: .favorite) ?? false
 
         if let legacyPassword = try container.decodeIfPresent(String.self, forKey: .password) {
@@ -71,6 +88,7 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         } else {
             password = KeychainCredentialStore.loadPassword(profileID: id)
         }
+        keyPassphrase = KeychainCredentialStore.loadKeyPassphrase(profileID: id)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -85,6 +103,9 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         try container.encodeIfPresent(keyPath, forKey: .keyPath)
         try container.encode(initialRemotePath, forKey: .initialRemotePath)
         try container.encodeIfPresent(hostKeyFingerprint, forKey: .hostKeyFingerprint)
+        try container.encodeIfPresent(cloudRegion, forKey: .cloudRegion)
+        try container.encodeIfPresent(cloudBucket, forKey: .cloudBucket)
+        try container.encode(transferProtocol, forKey: .transferProtocol)
         try container.encode(favorite, forKey: .favorite)
     }
 
@@ -93,16 +114,26 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         if let hostKeyFingerprint, !hostKeyFingerprint.isEmpty {
             advanced.hostKeyFingerprint = hostKeyFingerprint
         }
+        if transferProtocol == .ftps, port == 990 {
+            advanced.ftpsImplicit = true
+        }
+        if let cloudRegion, !cloudRegion.isEmpty {
+            advanced.cloudRegion = cloudRegion
+        }
+        if let cloudBucket, !cloudBucket.isEmpty {
+            advanced.cloudBucket = cloudBucket
+        }
         return SessionConfiguration(
             id: id,
             name: name,
-            protocol: .sftp,
+            protocol: transferProtocol,
             host: host,
             port: port,
             username: username,
             password: password,
             authMethod: authMethod,
             keyPath: keyPath,
+            keyPassphrase: keyPassphrase,
             initialRemotePath: initialRemotePath,
             advanced: advanced
         )
@@ -171,6 +202,11 @@ struct ProfileStore {
             } else {
                 KeychainCredentialStore.deletePassword(profileID: profile.id)
             }
+            if let keyPassphrase = profile.keyPassphrase, !keyPassphrase.isEmpty {
+                try KeychainCredentialStore.saveKeyPassphrase(keyPassphrase, profileID: profile.id)
+            } else {
+                KeychainCredentialStore.deleteKeyPassphrase(profileID: profile.id)
+            }
         }
 
         let tempURL = directory.appendingPathComponent("profiles.\(UUID().uuidString).json")
@@ -181,6 +217,6 @@ struct ProfileStore {
     }
 
     func deleteCredentials(profileID: UUID) {
-        KeychainCredentialStore.deletePassword(profileID: profileID)
+        KeychainCredentialStore.deleteAllCredentials(profileID: profileID)
     }
 }

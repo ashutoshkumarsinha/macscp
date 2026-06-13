@@ -76,6 +76,7 @@ final class ProfileCoordinator {
         selectedProfileID = profile.id
         do {
             try profileStore.save(profiles)
+            ICloudProfileSyncService.syncIfEnabled(profiles: profiles)
             onStatusMessage?("Saved profile \"\(profile.name)\"")
             MacSCPLogger.shared.info("Saved profile \"\(profile.name)\" (\(profile.host))", category: .session)
             return true

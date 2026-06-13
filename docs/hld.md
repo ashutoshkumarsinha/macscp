@@ -453,7 +453,9 @@ Run: `make test` or `swift test` (**88** XCTest + **3** Swift Testing = **91** t
 | Quick Look preview | 2 | Done |
 | Touch ID session lock | 2 | Done |
 | CLI (`macscp-cli` → `macscp`) | 1–2 | Done |
-| Internal remote editor | 1 | Not started |
+| Internal remote editor | 1 | Done |
+| SCP / FTP / FTPS backends | 2 | Done |
+| Shortcuts + URL scheme | 2 | Done |
 | Tabs | 2+ | Not started |
 
 ---

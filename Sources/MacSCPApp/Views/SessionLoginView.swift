@@ -62,40 +62,100 @@ struct SessionLoginView: View {
         }
     }
 
+    private var usesSSHAuth: Bool {
+        TransferProtocolDefaults.supportsSSHAuth(appModel.draft.transferProtocol)
+    }
+
     private var profileDetail: some View {
         Form {
-            Picker("Protocol", selection: .constant("SFTP")) {
-                Text("SFTP (SSH)").tag("SFTP")
+            Picker("Protocol", selection: Bindable(appModel).draft.transferProtocol) {
+                Text("SFTP (SSH)").tag(TransferProtocol.sftp)
+                Text("SCP (SSH)").tag(TransferProtocol.scp)
+                Text("FTP").tag(TransferProtocol.ftp)
+                Text("FTPS").tag(TransferProtocol.ftps)
+                Text("WebDAV").tag(TransferProtocol.webdav)
+                Text("Amazon S3").tag(TransferProtocol.s3)
+                Text("Google Cloud Storage").tag(TransferProtocol.gcs)
+            }
+            .onChange(of: appModel.draft.transferProtocol) { _, newValue in
+                appModel.draft.port = String(TransferProtocolDefaults.defaultPort(for: newValue))
+                if !TransferProtocolDefaults.supportsSSHAuth(newValue) {
+                    appModel.draft.authMethod = .password
+                }
             }
 
             TextField("Host Name", text: Bindable(appModel).draft.host)
             TextField("Port", text: Bindable(appModel).draft.port)
             TextField("Username", text: Bindable(appModel).draft.username)
 
-            Picker("Authentication", selection: Bindable(appModel).draft.authMethod) {
-                Text("SSH Key File").tag(AuthMethod.publicKey)
-                Text("Password").tag(AuthMethod.password)
-                Text("SSH Agent").tag(AuthMethod.agent)
+            if usesSSHAuth {
+                Picker("Authentication", selection: Bindable(appModel).draft.authMethod) {
+                    Text("SSH Key File").tag(AuthMethod.publicKey)
+                    Text("Password").tag(AuthMethod.password)
+                    Text("SSH Agent").tag(AuthMethod.agent)
+                }
+
+                if appModel.draft.authMethod == .publicKey {
+                    TextField("SSH Key", text: Bindable(appModel).draft.keyPath)
+                    SecureField("Key Passphrase (optional)", text: Bindable(appModel).draft.keyPassphrase)
+                } else if appModel.draft.authMethod == .password {
+                    SecureField("Password", text: Bindable(appModel).draft.password)
+                } else if appModel.draft.authMethod == .agent {
+                    Text("Uses keys from SSH_AUTH_SOCK (ssh-agent).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                TextField("Host Key Fingerprint (optional SHA-256)", text: Bindable(appModel).draft.hostKeyFingerprint)
+            } else {
+                SecureField(appModel.draft.transferProtocol == .webdav ? "Password" : "Secret Key", text: Bindable(appModel).draft.password)
             }
 
-            if appModel.draft.authMethod == .publicKey {
-                TextField("SSH Key", text: Bindable(appModel).draft.keyPath)
-            } else if appModel.draft.authMethod == .password {
-                SecureField("Password", text: Bindable(appModel).draft.password)
-            } else if appModel.draft.authMethod == .agent {
-                Text("Uses keys from SSH_AUTH_SOCK (ssh-agent).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if TransferProtocolDefaults.usesCloudCredentials(appModel.draft.transferProtocol)
+                && appModel.draft.transferProtocol != .webdav {
+                TextField("Bucket (optional if path is /bucket/prefix)", text: Bindable(appModel).draft.cloudBucket)
+                TextField("Region (e.g. us-east-1, auto for GCS)", text: Bindable(appModel).draft.cloudRegion)
             }
 
-            TextField("Initial Remote Path", text: Bindable(appModel).draft.initialRemotePath)
-            TextField("Host Key Fingerprint (optional SHA-256)", text: Bindable(appModel).draft.hostKeyFingerprint)
+            TextField(
+                appModel.draft.transferProtocol == .s3 || appModel.draft.transferProtocol == .gcs
+                    ? "Path (/bucket/prefix)"
+                    : "Initial Remote Path",
+                text: Bindable(appModel).draft.initialRemotePath
+            )
             TextField("Profile Name", text: Bindable(appModel).draft.name)
 
             Toggle("Require Touch ID to connect", isOn: Binding(
                 get: { AppLockService.isEnabled },
                 set: { AppLockService.setEnabled($0) }
             ))
+
+            Section("Optional Features") {
+                Toggle("Save transfer history locally", isOn: Binding(
+                    get: { appModel.featureSettings.transferHistoryEnabled },
+                    set: {
+                        var settings = appModel.featureSettings
+                        settings.transferHistoryEnabled = $0
+                        appModel.updateFeatureSettings(settings)
+                    }
+                ))
+                Toggle("Notify when transfer queue completes", isOn: Binding(
+                    get: { appModel.featureSettings.notifyOnQueueComplete },
+                    set: {
+                        var settings = appModel.featureSettings
+                        settings.notifyOnQueueComplete = $0
+                        appModel.updateFeatureSettings(settings)
+                    }
+                ))
+                Toggle("Sync saved profiles via iCloud (encrypted)", isOn: Binding(
+                    get: { appModel.featureSettings.iCloudProfileSyncEnabled },
+                    set: {
+                        var settings = appModel.featureSettings
+                        settings.iCloudProfileSyncEnabled = $0
+                        appModel.updateFeatureSettings(settings)
+                    }
+                ))
+            }
 
             HStack {
                 Button("Save") { appModel.saveDraftAsProfile() }

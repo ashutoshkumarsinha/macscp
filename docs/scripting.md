@@ -143,7 +143,7 @@ open ftps://user@host -explicit -passive=on
 | `call ls` | Use `ls` |
 | `.NET assembly` | Import `MacSCPCore` Swift package (Phase 3) |
 | `open ftpes://` | Use `ftps://` with `-explicit` |
-| `open s3://` | Phase 3 S3 backend |
+| `open s3://` | `open s3://ACCESS:SECRET@/bucket/prefix` or saved S3 profile |
 
 ### Migration checklist
 
@@ -224,6 +224,31 @@ Log failed transfers to stderr; use `--logfile` for audit trail.
 - Do not commit passphrases or passwords in scripts; use `--session`, Keychain, or env vars.
 - Prefer `--hostkey` in CI over `StrictHostKeyChecking=no`.
 - Use `--ini none` so GUI preference changes cannot break automation (WinSCP documented pitfall).
+
+---
+
+## AppleScript (macOS app)
+
+The MacSCP app ships an AppleScript dictionary (`MacSCP.sdef`) with four commands:
+
+| Command | Parameters |
+|---|---|
+| `connect` | profile name (direct parameter) |
+| `disconnect` | — |
+| `upload` | `local path`, `remote path` |
+| `download` | `remote path`, `local path` |
+
+Example:
+
+```applescript
+tell application "MacSCP"
+    connect "Production"
+    upload local path "~/build/app.zip" remote path "/srv/releases/app.zip"
+    disconnect
+end tell
+```
+
+When a session is already connected in the GUI, upload/download use the active backend instead of opening a new connection.
 
 ---
 

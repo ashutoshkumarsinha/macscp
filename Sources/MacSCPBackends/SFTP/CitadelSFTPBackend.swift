@@ -576,40 +576,6 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
     }
 }
 
-public enum TransferBackendFactory {
-    /// Default factory entry point; uses Citadel unless caller specifies backend kind.
-    public static func make(for transferProtocol: TransferProtocol) throws -> TransferBackend {
-        try make(for: transferProtocol, backend: .citadel)
-    }
-
-    public static func make(
-        for transferProtocol: TransferProtocol,
-        backend: SFTPBackendKind,
-        serialized: Bool = false
-    ) throws -> TransferBackend {
-        switch transferProtocol {
-        case .sftp, .scp:
-            let raw: CapableTransferBackend
-            switch backend {
-            case .citadel:
-                raw = CitadelSFTPBackend()
-            case .traversio:
-                raw = TraversioSFTPBackend()
-            }
-            if serialized {
-                return SerializingTransferBackend(wrapping: raw)
-            }
-            return raw
-        case .ftp, .ftps:
-            throw BackendError.notImplemented("FTP")
-        case .webdav:
-            throw BackendError.notImplemented("WebDAV")
-        case .s3, .gcs:
-            throw BackendError.notImplemented("S3")
-        }
-    }
-}
-
 private extension Data {
     init(buffer: ByteBuffer) {
         var copy = buffer

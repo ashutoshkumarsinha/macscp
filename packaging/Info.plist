@@ -25,6 +25,31 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
+	<string>MacSCPApplication</string>
+	<key>OSAScriptingDefinition</key>
+	<string>MacSCP.sdef</string>
+	<key>NSAppleScriptEnabled</key>
+	<true/>
+	<key>NSSupportsAppIntents</key>
+	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>MacSCP Session</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>macscp</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>SFTP Handler</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>sftp</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

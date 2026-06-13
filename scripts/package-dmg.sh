@@ -92,12 +92,27 @@ sed \
   "${ROOT}/packaging/Info.plist" > "${INFO_PLIST}"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${BUNDLE_ID}" "${INFO_PLIST}" 2>/dev/null || true
 cp "${INFO_PLIST}" "${APP_DIR}/Contents/Info.plist"
+cp "${ROOT}/packaging/MacSCP.sdef" "${APP_DIR}/Contents/Resources/MacSCP.sdef"
 cp "${ROOT}/NOTICE" "${APP_DIR}/Contents/Resources/NOTICE"
+
+if [[ -x "${ROOT}/scripts/build-finder-sync.sh" ]]; then
+  echo "==> Building Finder Sync extension"
+  MACSCP_SHORT_VERSION="${SHORT_VERSION}" MACSCP_BUILD_VERSION="${BUILD_VERSION}" \
+    "${ROOT}/scripts/build-finder-sync.sh"
+  mkdir -p "${APP_DIR}/Contents/PlugIns"
+  cp -R "${BUILD_DIR}/MacSCPFinderSync.appex" "${APP_DIR}/Contents/PlugIns/"
+fi
 
 if [[ "${SKIP_SIGN}" != "1" ]]; then
   ENTITLEMENTS="${ROOT}/packaging/MacSCP.entitlements"
   if [[ -n "${SIGN_IDENTITY}" ]]; then
     echo "==> Code signing with: ${SIGN_IDENTITY}"
+    if [[ -d "${APP_DIR}/Contents/PlugIns/MacSCPFinderSync.appex" ]]; then
+      codesign --force --options runtime --timestamp \
+        --entitlements "${ROOT}/Extensions/MacSCPFinderSync/MacSCPFinderSync.entitlements" \
+        --sign "${SIGN_IDENTITY}" \
+        "${APP_DIR}/Contents/PlugIns/MacSCPFinderSync.appex"
+    fi
     codesign --force --deep --options runtime --timestamp \
       --entitlements "${ENTITLEMENTS}" \
       --sign "${SIGN_IDENTITY}" \

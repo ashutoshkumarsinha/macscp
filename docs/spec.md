@@ -9,7 +9,7 @@ An open-source, WinSCP-inspired file transfer client rebuilt from the ground up 
 | Field | Value |
 |---|---|
 | Version | 0.3 (draft) |
-| Status | Phase 0–2 largely implemented; SFTP MVP + Apple Silicon performance + parity features in v0.3 preview |
+| Status | Phase 0–3 largely implemented; SFTP MVP + Apple Silicon performance + parity + cloud integrations in v0.3 preview |
 | Target OS | macOS 15 Sequoia minimum; macOS 26 Tahoe primary |
 | Architecture | Apple Silicon native (arm64); Intel best-effort via Rosetta where feasible |
 | Language | Swift 6 |
@@ -513,27 +513,29 @@ Run: `make test` or `swift test`.
 - [x] Apple Silicon performance layer (presets, TCP tuning, pool, listing cache, mmap reads)
 - [x] CI benchmark gate vs OpenSSH (`verify-benchmark-report.sh`)
 - [x] External remote editor (download → edit → re-upload)
-- [ ] Internal remote editor
+- [x] Internal remote editor
 - [x] Directory compare + one-way sync
 - [x] `macscp` CLI: open, get, put, ls, sync, script (product `macscp-cli`)
 
 ### Phase 2 — Parity+ (8–12 weeks)
 
-- [ ] SCP, FTP, FTPS
+- [x] SCP, FTP, FTPS
 - [x] Live sync (FSEvents watch)
 - [x] Terminal hand-off (Terminal + iTerm2)
-- [ ] Shortcuts actions
+- [x] Shortcuts actions
 - [x] Quick Look remote preview
 - [x] Script runner + WinSCP command mapping doc (basic `.macscp` subset)
 - [x] Touch ID session lock
 
 ### Phase 3 — Cloud & Integrations (ongoing)
 
-- [ ] WebDAV with performance tuning
-- [ ] Amazon S3 + GCS
-- [ ] Finder Sync extension
-- [ ] AppleScript dictionary
-- [ ] iCloud session sync (opt-in, encrypted)
+- [x] WebDAV with performance tuning
+- [x] Amazon S3 + GCS
+- [x] Finder Sync extension
+- [x] AppleScript dictionary
+- [x] iCloud session sync (opt-in, encrypted)
+- [x] Transfer history (optional, local)
+- [x] Notification Center on queue completion
 
 ---
 
@@ -572,7 +574,7 @@ Run: `make test` or `swift test`.
 | Commander interface | Dual-pane commander | 0–1 | Done |
 | Synchronize directories | Compare + sync dialog | 1–2 | Done (one-way) |
 | Keep Remote Directory Up To Date | Live sync | 2 | Done |
-| Integrated editor | Internal + external editor | 1 | External done; internal pending |
+| Integrated editor | Internal + external editor | 1 | Done |
 | PuTTY integration | Terminal / iTerm hand-off | 2 | Done |
 | Scripting / `winscp.com` | `macscp` CLI + script files | 1–2 | CLI done; full script parity partial |
 | Performance tuning | Transfer presets + Apple Silicon layer | 1 | Done |

@@ -20,16 +20,27 @@ actor CLISessionStore {
         if let backend {
             try await backend.disconnect()
         }
-        await HostKeyTrustGate.shared.setMode(.batchStrict)
-        defer { Task { await HostKeyTrustGate.shared.setMode(.silentTOFU) } }
+        if TransferProtocolDefaults.supportsSSHAuth(configuration.protocol) {
+            await HostKeyTrustGate.shared.setMode(.batchStrict)
+        }
+        defer {
+            if TransferProtocolDefaults.supportsSSHAuth(configuration.protocol) {
+                Task { await HostKeyTrustGate.shared.setMode(.silentTOFU) }
+            }
+        }
+
+        var session = configuration
+        session.networkProfile = TransferPerformanceTuning.networkProfile(from: transferSettings.preset)
 
         let backendKind = SFTPBackendSelector.select(
             authMethod: configuration.authMethod,
             settings: transferSettings
         )
-        var session = configuration
-        session.networkProfile = TransferPerformanceTuning.networkProfile(from: transferSettings.preset)
-        let instance = try TransferBackendFactory.make(for: .sftp, backend: backendKind, serialized: true)
+        let instance = try TransferBackendFactory.make(
+            for: configuration.protocol,
+            backend: backendKind,
+            serialized: true
+        )
         try await instance.connect(configuration: session)
         try await instance.changeDirectory(to: session.initialRemotePath.isEmpty ? "/" : session.initialRemotePath)
         backend = instance
@@ -90,6 +101,7 @@ enum CLIError: Error, CustomStringConvertible {
 
 enum CLISessionBuilder {
     static func configuration(
+        transferProtocol: TransferProtocol,
         host: String,
         port: Int,
         username: String,
@@ -97,22 +109,20 @@ enum CLISessionBuilder {
         keyPath: String?,
         authMethod: AuthMethod,
         remotePath: String,
-        hostKeyFingerprint: String?
+        hostKeyFingerprint: String?,
+        implicitTLS: Bool = false
     ) -> SessionConfiguration {
-        var advanced = AdvancedSettings()
-        if let hostKeyFingerprint, !hostKeyFingerprint.isEmpty {
-            advanced.hostKeyFingerprint = hostKeyFingerprint
-        }
-        return SessionConfiguration(
-            protocol: .sftp,
+        SessionConfigurationBuilder.make(
+            transferProtocol: transferProtocol,
             host: host,
             port: port,
             username: username,
             password: password,
-            authMethod: authMethod,
             keyPath: keyPath,
-            initialRemotePath: remotePath,
-            advanced: advanced
+            authMethod: authMethod,
+            remotePath: remotePath,
+            hostKeyFingerprint: hostKeyFingerprint,
+            implicitTLS: implicitTLS
         )
     }
 }

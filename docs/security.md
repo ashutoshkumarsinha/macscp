@@ -20,6 +20,7 @@ Security posture for v0.3 developer preview and the path to Mac App Store distri
 | Asset | Storage |
 |---|---|
 | Passwords | macOS Keychain (`KeychainCredentialStore`) |
+| SSH key passphrases | macOS Keychain (separate service; never in profiles.json) |
 | SSH private key paths | Profile JSON (`~/Library/Application Support/MacSCP/profiles.json`, mode 600) |
 | Host keys (TOFU) | `~/.macscp/known_hosts.json` |
 | Optional fingerprint pin | Profile advanced settings |

@@ -14,7 +14,7 @@ MacSCP is an open-source, WinSCP-inspired SFTP client for macOS. It provides a *
 
 On Apple Silicon, MacSCP applies optional **transfer presets** (connection pooling, larger chunks, TCP tuning) to improve throughput without manual tuning.
 
-This guide covers what is **implemented in v0.3**. Phase 3 items (S3, Finder Sync, tabs) remain planned — see [spec.md](spec.md).
+This guide covers what is **implemented in v0.3**, including Phase 3 cloud protocols (WebDAV, S3, GCS), Finder Sync, AppleScript, optional iCloud profile sync, transfer history, and queue notifications.
 
 ---
 
@@ -129,10 +129,13 @@ Select a profile in the sidebar — the form updates. Change fields and click **
 
 | Method | Backend | Notes |
 |---|---|---|
+| SFTP | Citadel (default) / Traversio | Dual-pane commander, sync, queue |
+| SCP | Traversio | Legacy SSH copy; remote listings via `ls` |
+| FTP / FTPS | Native CFStream client | Password auth; passive mode; explicit + implicit TLS |
 | SSH public key | Citadel (default) | Path to private key (e.g. `~/.ssh/id_ed25519`) |
 | Password | Citadel (default) | Stored in macOS Keychain (not in profiles.json) |
 | SSH agent | Traversio | Uses `SSH_AUTH_SOCK` (ssh-agent or 1Password agent) |
-| Encrypted keys | Backend supports | Passphrase field coming in UI |
+| Encrypted keys | Citadel / Traversio | Optional **Key Passphrase** field on login (stored in Keychain) |
 
 **Optional:** set `use_traversio_for_performance = true` under `[transfer]` to route key/password sessions through Traversio for maximum throughput experiments. SSH agent sessions always use Traversio regardless of this flag.
 
@@ -251,7 +254,8 @@ Right-click a file or folder in either pane:
 | **Delete** | Moves to Trash | Removes file or recursive directory |
 | **Properties / chmod** | — | Octal permissions sheet |
 | **Quick Look** | — | Preview remote file |
-| **Edit** | — | Download → external editor → re-upload on save |
+| **Edit (internal)** | — | In-app editor with encoding and line-ending options; Save uploads |
+| **Edit (external)** | — | Download → external editor → re-upload on save |
 
 ### 6.5 Directory sync
 
@@ -277,6 +281,25 @@ make package-cli   # sudo: installs /usr/local/bin/macscp
 ```
 
 Release `.app` bundles the same CLI at `MacSCP.app/Contents/MacOS/macscp`. Swift package product: **`macscp-cli`**. See [cli-reference.md](cli-reference.md).
+
+Supported `open` URLs: `sftp://`, `scp://`, `ftp://`, `ftps://`.
+
+### 6.8 Shortcuts and deep links
+
+MacSCP registers App Shortcuts for:
+
+- **Connect to Session** — profile name
+- **Upload File** / **Download File** — profile + paths
+- **Sync Directories** — one-way sync
+- **Run MacSCP Script** — `.macscp` file path
+
+Deep link to a saved profile:
+
+```text
+macscp://open?session=<profile-uuid>
+```
+
+The app also handles `sftp://user@host/path` URLs when registered as the default handler.
 
 ---
 
@@ -447,26 +470,59 @@ Details: [SFTP backend spike](spikes/sftp-backend-spike.md).
 
 ---
 
-## 12. What's Not in This Release
+## 12. Phase 3 Features
+
+### Cloud protocols (WebDAV, S3, GCS)
+
+Choose **WebDAV**, **Amazon S3**, or **Google Cloud Storage** in the connection form. For object storage, use access key ID as username and secret as password. Path `/bucket/prefix` sets the default remote location; optional **Bucket** and **Region** fields override path parsing.
+
+URL schemes: `https://user@host/path` (WebDAV), `s3://KEY:SECRET@/bucket/prefix`, `gcs://KEY:SECRET@/bucket/prefix`.
+
+### Optional app features (`~/.macscp/config.toml` `[app]` section)
+
+| Setting | Description |
+|---|---|
+| `transfer_history = true` | Append completed transfers to `~/.macscp/transfer-history.json` |
+| `notify_on_queue_complete = true` | Notification Center alert when the queue goes idle |
+| `icloud_profile_sync = true` | Encrypt and sync saved profiles via iCloud Drive (opt-in) |
+
+Toggles are also available under **Optional Features** in the connection form.
+
+### Finder Sync extension
+
+When packaged with `make package-dmg`, MacSCP embeds a Finder Sync extension. Right-click files in synced local folders for **Upload to MacSCP (session)…**. The active session name and local pane path are shared via app group `group.com.macscp.app`.
+
+Enable the extension in **System Settings → Privacy & Security → Extensions → Finder Extensions**.
+
+### AppleScript
+
+Dictionary: `MacSCP.sdef` (embedded in the app bundle). Commands:
+
+```applescript
+tell application "MacSCP"
+    connect "Staging"
+    upload local path "~/Sites/index.html" remote path "/var/www/index.html"
+    download remote path "/var/log/app.log" local path "~/Downloads/app.log"
+    disconnect
+end tell
+```
+
+---
+
+## 13. What's Not in This Release
 
 The following remain **planned** (see [spec.md](spec.md)):
 
-- **Internal** remote editor (external editor via Quick Look / Edit is supported)
 - **Integrated** terminal pane (external Terminal / iTerm hand-off is supported)
 - Tabs and multiple sessions per window
 - Bidirectional / two-way sync (one-way compare + sync is supported)
 - ProxyJump / bastion UI
-- Key passphrase field in login UI (encrypted keys work in benchmarks)
-- SCP, FTP, FTPS, WebDAV, S3 backends
-- Shortcuts, AppleScript, Finder Sync extension
 - Master password for profile export encryption
 - App Sandbox + notarized Mac App Store build
 
-See [spec.md](spec.md) roadmap for Phase 3 items.
-
 ---
 
-## 13. Getting Help
+## 14. Getting Help
 
 | Resource | Link |
 |---|---|

@@ -21,15 +21,27 @@ public struct AdvancedSettings: Codable, Sendable, Equatable {
     public var compression: Bool
     public var connectionTimeoutSeconds: Int
     public var hostKeyFingerprint: String?
+    public var ftpPassive: Bool
+    public var ftpsImplicit: Bool
+    public var cloudRegion: String?
+    public var cloudBucket: String?
 
     public init(
         compression: Bool = false,
         connectionTimeoutSeconds: Int = 30,
-        hostKeyFingerprint: String? = nil
+        hostKeyFingerprint: String? = nil,
+        ftpPassive: Bool = true,
+        ftpsImplicit: Bool = false,
+        cloudRegion: String? = nil,
+        cloudBucket: String? = nil
     ) {
         self.compression = compression
         self.connectionTimeoutSeconds = connectionTimeoutSeconds
         self.hostKeyFingerprint = hostKeyFingerprint
+        self.ftpPassive = ftpPassive
+        self.ftpsImplicit = ftpsImplicit
+        self.cloudRegion = cloudRegion
+        self.cloudBucket = cloudBucket
     }
 }
 

@@ -42,7 +42,7 @@ public struct TransferProgress: Sendable {
     }
 }
 
-public enum TransferDirection: Sendable {
+public enum TransferDirection: String, Sendable, Codable {
     case upload
     case download
 }

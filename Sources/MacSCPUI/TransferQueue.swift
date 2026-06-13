@@ -73,6 +73,7 @@ public final class TransferQueue {
 
     private var transferSettings = MacSCPTransferSettings()
     private let progressMinInterval: TimeInterval = 0.1
+    public var onQueueIdle: (([TransferJob]) -> Void)?
 
     public var activeCount: Int {
         jobs.filter {
@@ -282,7 +283,10 @@ public final class TransferQueue {
 
             let indicesToStart = jobs.indices.filter { jobs[$0].state == .queued }.prefix(availableSlots)
             if indicesToStart.isEmpty {
-                if runningCount == 0 { return }
+                if runningCount == 0 {
+                    notifyQueueIdleIfNeeded()
+                    return
+                }
                 try? await Task.sleep(for: .milliseconds(100))
                 continue
             }
@@ -295,6 +299,13 @@ public final class TransferQueue {
 
             try? await Task.sleep(for: .milliseconds(100))
         }
+        notifyQueueIdleIfNeeded()
+    }
+
+    private func notifyQueueIdleIfNeeded() {
+        guard !jobs.isEmpty else { return }
+        guard activeCount == 0 else { return }
+        onQueueIdle?(jobs)
     }
 
     private func nextReadyUploadBatch() -> [UUID]? {

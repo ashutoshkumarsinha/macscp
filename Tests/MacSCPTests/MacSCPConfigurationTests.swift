@@ -156,4 +156,34 @@ final class MacSCPConfigurationTests: XCTestCase {
         let settings = MacSCPConfiguration.parseSettings(from: toml)
         XCTAssertEqual(settings.transfer.maxConcurrentWrites, 10)
     }
+
+    func testParseFeatureSettingsFromAppSection() {
+        let toml = """
+        [app]
+        transfer_history = true
+        notify_on_queue_complete = true
+        icloud_profile_sync = false
+        """
+        let settings = MacSCPConfiguration.parseSettings(from: toml)
+        XCTAssertTrue(settings.features.transferHistoryEnabled)
+        XCTAssertTrue(settings.features.notifyOnQueueComplete)
+        XCTAssertFalse(settings.features.iCloudProfileSyncEnabled)
+    }
+
+    func testSaveFeatureSettingsUpdatesAppSection() throws {
+        let tempHome = FileManager.default.temporaryDirectory
+            .appendingPathComponent("macscp-features-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempHome, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempHome) }
+
+        _ = try MacSCPConfiguration.loadSettings(homeDirectory: tempHome)
+        let features = MacSCPFeatureSettings(
+            transferHistoryEnabled: true,
+            notifyOnQueueComplete: false,
+            iCloudProfileSyncEnabled: true
+        )
+        try MacSCPConfiguration.saveFeatureSettings(features, homeDirectory: tempHome)
+        let loaded = try MacSCPConfiguration.loadSettings(homeDirectory: tempHome)
+        XCTAssertEqual(loaded.features, features)
+    }
 }

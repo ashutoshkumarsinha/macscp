@@ -4,11 +4,41 @@ import Foundation
 import Security
 
 enum KeychainCredentialStore {
-    private static let service = "com.macscp.session-password"
+    private static let passwordService = "com.macscp.session-password"
+    private static let keyPassphraseService = "com.macscp.session-key-passphrase"
 
     static func savePassword(_ password: String, profileID: UUID) throws {
+        try saveSecret(password, profileID: profileID, service: passwordService)
+    }
+
+    static func loadPassword(profileID: UUID) -> String? {
+        loadSecret(profileID: profileID, service: passwordService)
+    }
+
+    static func deletePassword(profileID: UUID) {
+        deleteSecret(profileID: profileID, service: passwordService)
+    }
+
+    static func saveKeyPassphrase(_ passphrase: String, profileID: UUID) throws {
+        try saveSecret(passphrase, profileID: profileID, service: keyPassphraseService)
+    }
+
+    static func loadKeyPassphrase(profileID: UUID) -> String? {
+        loadSecret(profileID: profileID, service: keyPassphraseService)
+    }
+
+    static func deleteKeyPassphrase(profileID: UUID) {
+        deleteSecret(profileID: profileID, service: keyPassphraseService)
+    }
+
+    static func deleteAllCredentials(profileID: UUID) {
+        deletePassword(profileID: profileID)
+        deleteKeyPassphrase(profileID: profileID)
+    }
+
+    private static func saveSecret(_ value: String, profileID: UUID, service: String) throws {
         let account = profileID.uuidString
-        let data = Data(password.utf8)
+        let data = Data(value.utf8)
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -28,7 +58,7 @@ enum KeychainCredentialStore {
         }
     }
 
-    static func loadPassword(profileID: UUID) -> String? {
+    private static func loadSecret(profileID: UUID, service: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -43,7 +73,7 @@ enum KeychainCredentialStore {
         return String(data: data, encoding: .utf8)
     }
 
-    static func deletePassword(profileID: UUID) {
+    private static func deleteSecret(profileID: UUID, service: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

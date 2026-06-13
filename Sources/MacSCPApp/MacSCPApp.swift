@@ -5,11 +5,14 @@ import SwiftUI
 
 @main
 struct MacSCPApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var appModel: AppModel
 
     init() {
         MacSCPLogger.shared.bootstrap()
-        _appModel = State(initialValue: AppModel())
+        let model = AppModel()
+        MacSCPScriptingController.appModel = model
+        _appModel = State(initialValue: model)
     }
 
     var body: some Scene {
@@ -20,6 +23,9 @@ struct MacSCPApp: App {
                 .environment(appModel)
                 // Minimum window size so dual panes fit comfortably.
                 .frame(minWidth: 960, minHeight: 560)
+                .onOpenURL { url in
+                    Task { await appModel.handleIncomingURL(url) }
+                }
         }
         // Add items to the macOS menu bar (File menu, etc.).
         .commands {
