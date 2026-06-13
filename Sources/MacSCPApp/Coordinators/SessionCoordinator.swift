@@ -58,6 +58,11 @@ final class SessionCoordinator {
             await disconnect()
         }
 
+        await HostKeyTrustGate.shared.setMode(.interactive)
+        defer {
+            Task { await HostKeyTrustGate.shared.setMode(.silentTOFU) }
+        }
+
         isConnecting = true
         onStatusMessage?("Connecting…")
         defer { isConnecting = false }

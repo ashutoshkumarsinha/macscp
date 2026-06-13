@@ -89,7 +89,13 @@ struct SessionLoginView: View {
             }
 
             TextField("Initial Remote Path", text: Bindable(appModel).draft.initialRemotePath)
+            TextField("Host Key Fingerprint (optional SHA-256)", text: Bindable(appModel).draft.hostKeyFingerprint)
             TextField("Profile Name", text: Bindable(appModel).draft.name)
+
+            Toggle("Require Touch ID to connect", isOn: Binding(
+                get: { AppLockService.isEnabled },
+                set: { AppLockService.setEnabled($0) }
+            ))
 
             HStack {
                 Button("Save") { appModel.saveDraftAsProfile() }

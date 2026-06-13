@@ -70,33 +70,85 @@ public enum MacSCPHostKeyTrustStore {
         return .custom(CitadelHostKeyValidator(endpoint: endpoint, expectedFingerprint: expected))
     }
 
-    static func validateTOFU(
+    public static func validateTOFU(
         endpoint: String,
         receivedFingerprint: String,
         expectedFingerprint: String?
     ) throws {
-        let received = normalizeFingerprint(receivedFingerprint)
+        try validateTOFUWithGate(
+            endpoint: endpoint,
+            receivedFingerprint: receivedFingerprint,
+            expectedFingerprint: expectedFingerprint,
+            gate: HostKeyTrustGate.shared
+        )
+    }
 
-        if let expectedFingerprint {
-            if received != expectedFingerprint {
-                throw BackendError.hostKeyRejected(expected: expectedFingerprint, actual: received)
-            }
-            return
+    public static func validateTOFUWithGate(
+        endpoint: String,
+        receivedFingerprint: String,
+        expectedFingerprint: String?,
+        gate: HostKeyTrustGate
+    ) throws {
+        let approved = HostKeyTrustGate.runBlocking {
+            await evaluateTrust(
+                endpoint: endpoint,
+                receivedFingerprint: receivedFingerprint,
+                expectedFingerprint: expectedFingerprint,
+                gate: gate
+            )
+        }
+        if !approved {
+            throw BackendError.hostKeyRejected(
+                expected: expectedFingerprint ?? load()[endpoint]?.fingerprintSHA256,
+                actual: normalizeFingerprint(receivedFingerprint)
+            )
+        }
+    }
+
+    static func evaluateTrust(
+        endpoint: String,
+        receivedFingerprint: String,
+        expectedFingerprint: String?,
+        gate: HostKeyTrustGate
+    ) async -> Bool {
+        let received = normalizeFingerprint(receivedFingerprint)
+        let pinned = expectedFingerprint.map(normalizeFingerprint)
+
+        if let pinned, !pinned.isEmpty {
+            return received == pinned
         }
 
         var records = load()
         if let stored = records[endpoint] {
-            if normalizeFingerprint(stored.fingerprintSHA256) != received {
-                throw BackendError.hostKeyRejected(
-                    expected: stored.fingerprintSHA256,
-                    actual: received
-                )
+            let storedNorm = normalizeFingerprint(stored.fingerprintSHA256)
+            if storedNorm == received {
+                return true
             }
-            return
+            let request = HostKeyTrustRequest(
+                endpoint: endpoint,
+                fingerprintSHA256: received,
+                isKeyChange: true,
+                storedFingerprint: stored.fingerprintSHA256
+            )
+            let approved = await gate.approveTrust(for: request)
+            if approved {
+                records[endpoint] = Record(fingerprintSHA256: received)
+                try? save(records)
+            }
+            return approved
         }
 
-        records[endpoint] = Record(fingerprintSHA256: received)
-        try save(records)
+        let request = HostKeyTrustRequest(
+            endpoint: endpoint,
+            fingerprintSHA256: received,
+            isKeyChange: false
+        )
+        let approved = await gate.approveTrust(for: request)
+        if approved {
+            records[endpoint] = Record(fingerprintSHA256: received)
+            try? save(records)
+        }
+        return approved
     }
 }
 

@@ -203,6 +203,33 @@ final class TransferCoordinator {
         }
     }
 
+    func enqueueSyncUpload(files: [DirectoryTransferFile]) {
+        guard !files.isEmpty else { return }
+        if files.count > 1 {
+            transferQueue.enqueueUploadBatch(items: files.map {
+                ($0.localURL, $0.remotePath, $0.totalBytes, OverwritePolicy.overwrite)
+            })
+        } else if let file = files.first {
+            transferQueue.enqueueUpload(
+                localURL: file.localURL,
+                remotePath: file.remotePath,
+                totalBytes: file.totalBytes,
+                overwritePolicy: .overwrite
+            )
+        }
+    }
+
+    func enqueueSyncDownload(files: [DirectoryTransferFile]) {
+        for file in files {
+            transferQueue.enqueueDownload(
+                remotePath: file.remotePath,
+                localURL: file.localURL,
+                totalBytes: file.totalBytes,
+                overwritePolicy: .overwrite
+            )
+        }
+    }
+
     private func queueTransfers(kind: PendingTransferBatch.Kind, items: [PendingTransferItem], isConnected: Bool) {
         guard isConnected, !items.isEmpty else { return }
 

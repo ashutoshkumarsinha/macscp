@@ -2,14 +2,14 @@
 
 import Foundation
 
-public enum EntryType: Sendable, Equatable {
+public enum EntryType: String, Sendable, Equatable, Codable {
     case file
     case directory
     case symlink
 }
 
 // Unix permission bits (e.g. 0o644) for remote files.
-public struct FilePermissions: Sendable, Equatable {
+public struct FilePermissions: Sendable, Equatable, Codable {
     public var octal: UInt32
 
     public init(octal: UInt32) {
@@ -18,7 +18,7 @@ public struct FilePermissions: Sendable, Equatable {
 }
 
 // Describes one file or folder on the remote server.
-public struct RemoteEntry: Sendable, Equatable {
+public struct RemoteEntry: Sendable, Equatable, Codable {
     public var name: String
     public var path: String          // Full remote path
     public var type: EntryType

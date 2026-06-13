@@ -26,7 +26,11 @@ struct CommanderView: View {
                     },
                     onDropFromOpposite: { payload in
                         Task { await appModel.downloadDropped(fileNames: payload.fileNames) }
-                    }
+                    },
+                    onNewFolder: { appModel.promptNewFolder(pane: .local) },
+                    onRename: { appModel.promptRename(pane: .local, entryName: $0) },
+                    onDelete: { Task { await appModel.deleteSelected(pane: .local) } },
+                    onProperties: { appModel.promptProperties(pane: .local, entryName: $0) }
                 )
                 FilePaneView(
                     paneSide: .remote,
@@ -43,7 +47,13 @@ struct CommanderView: View {
                     },
                     onDropFromOpposite: { payload in
                         Task { await appModel.uploadDropped(fileNames: payload.fileNames) }
-                    }
+                    },
+                    onNewFolder: { appModel.promptNewFolder(pane: .remote) },
+                    onRename: { appModel.promptRename(pane: .remote, entryName: $0) },
+                    onDelete: { Task { await appModel.deleteSelected(pane: .remote) } },
+                    onProperties: { appModel.promptProperties(pane: .remote, entryName: $0) },
+                    onQuickLook: { Task { await appModel.quickLookRemote() } },
+                    onEdit: { Task { await appModel.editRemoteSelection() } }
                 )
             }
             Divider()
@@ -56,6 +66,34 @@ struct CommanderView: View {
             OverwritePromptView(batch: batch) { action in
                 appModel.resolveOverwritePrompt(action: action)
             }
+        }
+        .sheet(item: Bindable(appModel).hostKeyPrompt) { request in
+            HostKeyPromptView(
+                request: request,
+                onTrust: { appModel.respondHostKey(trusted: true) },
+                onReject: { appModel.respondHostKey(trusted: false) }
+            )
+        }
+        .sheet(item: Bindable(appModel).namePrompt) { prompt in
+            NamePromptView(
+                title: prompt.title,
+                placeholder: prompt.placeholder,
+                initialValue: prompt.initialValue,
+                onConfirm: { value in Task { await appModel.confirmNamePrompt(value) } },
+                onCancel: { appModel.namePrompt = nil }
+            )
+        }
+        .sheet(item: Bindable(appModel).propertiesPrompt) { prompt in
+            PropertiesSheetView(
+                paneSide: prompt.paneSide,
+                entryName: prompt.entryName,
+                permissionsOctal: prompt.permissionsOctal,
+                onSave: { value in Task { await appModel.saveProperties(octal: value) } },
+                onCancel: { appModel.propertiesPrompt = nil }
+            )
+        }
+        .sheet(isPresented: Bindable(appModel).showSyncSheet) {
+            SyncCompareView()
         }
         .toolbar {
             ToolbarItem(placement: .automatic) {
@@ -89,8 +127,7 @@ struct CommanderView: View {
             }
             .help("Refresh")
 
-            Divider()
-                .frame(height: 20)
+            Divider().frame(height: 20)
 
             Button {
                 Task { await appModel.uploadSelected() }
@@ -98,7 +135,6 @@ struct CommanderView: View {
                 Label("Upload", systemImage: "arrow.right.circle")
             }
             .keyboardShortcut("u", modifiers: [.command, .shift])
-            .help("Upload selected local files to remote")
 
             Button {
                 Task { await appModel.downloadSelected() }
@@ -106,10 +142,31 @@ struct CommanderView: View {
                 Label("Download", systemImage: "arrow.left.circle")
             }
             .keyboardShortcut("d", modifiers: [.command, .shift])
-            .help("Download selected remote files to local")
+
+            Button {
+                Task { await appModel.compareDirectories() }
+            } label: {
+                Label("Sync", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .help("Compare and synchronize directories")
+
+            Button {
+                appModel.openTerminal()
+            } label: {
+                Label("Terminal", systemImage: "terminal")
+            }
+
+            Button {
+                appModel.toggleLiveSync()
+            } label: {
+                Label(
+                    "Live Sync",
+                    systemImage: appModel.liveSyncEnabled ? "bolt.circle.fill" : "bolt.circle"
+                )
+            }
+            .help("Keep remote directory up to date (FSEvents)")
 
             Spacer()
-
             selectionSummary
 
             Text("SFTP")
@@ -202,6 +259,12 @@ struct FilePaneView: View {
     let onUp: () -> Void
     let onOpen: (PaneEntry) -> Void
     let onDropFromOpposite: (PaneDragPayload) -> Void
+    var onNewFolder: () -> Void = {}
+    var onRename: (String) -> Void = { _ in }
+    var onDelete: () -> Void = {}
+    var onProperties: (String) -> Void = { _ in }
+    var onQuickLook: () -> Void = {}
+    var onEdit: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -216,6 +279,8 @@ struct FilePaneView: View {
                         .truncationMode(.middle)
                 }
                 Spacer()
+                Button("", systemImage: "folder.badge.plus") { onNewFolder() }
+                    .help("New folder")
                 Button("", systemImage: "arrow.up.to.line") { onUp() }
                 Button("", systemImage: "arrow.clockwise") { onRefresh() }
             }
@@ -224,6 +289,16 @@ struct FilePaneView: View {
             Divider()
             List(entries, selection: $selection) { entry in
                 row(for: entry)
+                    .contextMenu {
+                        Button("Rename") { onRename(entry.name) }
+                        Button("Properties") { onProperties(entry.name) }
+                        if paneSide == .remote && !entry.isDirectory {
+                            Button("Quick Look") { onQuickLook() }
+                            Button("Edit with External Editor") { onEdit() }
+                        }
+                        Divider()
+                        Button("Delete", role: .destructive) { onDelete() }
+                    }
             }
             .listStyle(.plain)
         }
@@ -264,6 +339,8 @@ struct FilePaneView: View {
         .onTapGesture(count: 2) {
             if entry.isDirectory {
                 onOpen(entry)
+            } else if paneSide == .remote {
+                onQuickLook()
             }
         }
 
@@ -279,7 +356,6 @@ struct FilePaneView: View {
     }
 
     private func dragPayload(for entry: PaneEntry) -> PaneDragPayload? {
-        // Directories are draggable; TransferCoordinator expands them before enqueue.
         let names: [String]
         if selection.contains(entry.name) {
             names = entries.filter { selection.contains($0.name) }.map(\.name)

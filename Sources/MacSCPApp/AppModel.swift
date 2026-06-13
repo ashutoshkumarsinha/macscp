@@ -17,9 +17,18 @@ final class AppModel: TransferBackendProvider {
     let localPane = LocalPaneCoordinator()
     let remotePane = RemotePaneCoordinator()
     let transfers = TransferCoordinator()
+    let fileOps = FileOperationsCoordinator()
+    let sync = SyncCoordinator()
+    private let remoteEditor = RemoteEditorService()
+    private let liveSync = LiveSyncCoordinator()
 
     var statusMessage = "Ready"
+    var hostKeyPrompt: HostKeyTrustRequest?
+    var namePrompt: NamePromptState?
+    var propertiesPrompt: PropertiesPromptState?
+    var liveSyncEnabled = false
     private var paneRefreshTask: Task<Void, Never>?
+    private var hostKeyPollTask: Task<Void, Never>?
 
     var currentBackend: TransferBackend? { sessionCoordinator.backend }
 
@@ -97,6 +106,41 @@ final class AppModel: TransferBackendProvider {
 
     var transferQueue: TransferQueue { transfers.transferQueue }
 
+    var syncDirection: SyncDirection {
+        get { sync.syncDirection }
+        set { sync.syncDirection = newValue }
+    }
+
+    var syncCompareRows: [SyncCompareRow] {
+        sync.compareRows
+    }
+
+    var showSyncSheet: Bool {
+        get { sync.showSyncSheet }
+        set { sync.showSyncSheet = newValue }
+    }
+
+    struct NamePromptState: Identifiable {
+        var id = UUID()
+        var title: String
+        var placeholder: String
+        var initialValue: String
+        var paneSide: FilePaneSide
+        var mode: NamePromptMode
+    }
+
+    enum NamePromptMode {
+        case newFolder
+        case rename(entryName: String)
+    }
+
+    struct PropertiesPromptState: Identifiable {
+        var id = UUID()
+        var paneSide: FilePaneSide
+        var entryName: String
+        var permissionsOctal: String
+    }
+
     init() {
         wireCoordinators()
 
@@ -122,16 +166,22 @@ final class AppModel: TransferBackendProvider {
         sessionCoordinator.onStatusMessage = setStatus
         remotePane.onStatusMessage = setStatus
         transfers.onStatusMessage = setStatus
+        fileOps.onStatusMessage = setStatus
+        sync.onStatusMessage = setStatus
 
         sessionCoordinator.onConnected = { [weak self] in
             await self?.refreshRemote()
         }
 
         sessionCoordinator.onDisconnected = { [weak self] in
-            // Fail queued jobs and clear remote pane when the SSH session ends.
             self?.transfers.handleDisconnect()
+            self?.liveSync.stop()
+            self?.liveSyncEnabled = false
+            self?.remoteEditor.stopAll()
             self?.paneRefreshTask?.cancel()
             self?.paneRefreshTask = nil
+            self?.hostKeyPollTask?.cancel()
+            self?.hostKeyPollTask = nil
             self?.remotePane.remoteEntries = []
             self?.remotePane.selectedRemoteNames = []
         }
@@ -147,7 +197,36 @@ final class AppModel: TransferBackendProvider {
     func saveDraftAsProfile() { _ = profileCoordinator.saveDraftAsProfile() }
 
     func connect() async {
+        guard await AppLockService.authenticate(reason: "Unlock MacSCP to connect") else {
+            statusMessage = "Authentication required"
+            return
+        }
+        startHostKeyPolling()
         await sessionCoordinator.connect(using: profileCoordinator.draft)
+        stopHostKeyPolling()
+    }
+
+    func respondHostKey(trusted: Bool) {
+        Task { await HostKeyTrustGate.shared.respond(trusted: trusted) }
+        hostKeyPrompt = nil
+    }
+
+    private func startHostKeyPolling() {
+        hostKeyPollTask?.cancel()
+        hostKeyPollTask = Task {
+            while !Task.isCancelled {
+                if let request = await HostKeyTrustGate.shared.peekPendingRequest() {
+                    hostKeyPrompt = request
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
+    private func stopHostKeyPolling() {
+        hostKeyPollTask?.cancel()
+        hostKeyPollTask = nil
+        hostKeyPrompt = nil
     }
 
     func disconnect() async {
@@ -222,6 +301,165 @@ final class AppModel: TransferBackendProvider {
         transfers.transferDidComplete(jobID: jobID)
     }
 
+    func compareDirectories() async {
+        await sync.compare(
+            localPath: localPath,
+            remotePath: remotePath,
+            backend: sessionCoordinator.backend
+        )
+    }
+
+    func runSync(previewOnly: Bool) {
+        sync.enqueueSync(transferCoordinator: transfers, previewOnly: previewOnly)
+    }
+
+    func openTerminal() {
+        let config = profileCoordinator.draft.toSessionConfiguration()
+        TerminalHandoff.openSSHSession(configuration: config, remotePath: remotePath)
+    }
+
+    func toggleLiveSync() {
+        if liveSyncEnabled {
+            liveSync.stop()
+            liveSyncEnabled = false
+            statusMessage = "Live sync stopped"
+        } else {
+            liveSync.start(
+                localRoot: localPath,
+                remoteRoot: remotePath,
+                transferCoordinator: transfers,
+                onStatus: { [weak self] message in self?.statusMessage = message }
+            )
+            liveSyncEnabled = true
+        }
+    }
+
+    func quickLookRemote() async {
+        guard let name = remotePane.selectedRemoteNames.first,
+              let entry = remotePane.remoteEntries.first(where: { $0.name == name }) else { return }
+        await QuickLookPreviewService.previewRemoteFile(
+            entry: entry,
+            backend: sessionCoordinator.backend!,
+            onStatus: { [weak self] message in self?.statusMessage = message }
+        )
+    }
+
+    func editRemoteSelection() async {
+        guard let name = remotePane.selectedRemoteNames.first,
+              let entry = remotePane.remoteEntries.first(where: { $0.name == name }),
+              let backend = sessionCoordinator.backend else { return }
+        await remoteEditor.editRemoteFile(
+            entry: entry,
+            backend: backend,
+            onStatus: { [weak self] message in self?.statusMessage = message }
+        )
+    }
+
+    func promptNewFolder(pane: FilePaneSide) {
+        namePrompt = NamePromptState(
+            title: "New Folder",
+            placeholder: "Folder name",
+            initialValue: "",
+            paneSide: pane,
+            mode: .newFolder
+        )
+    }
+
+    func promptRename(pane: FilePaneSide, entryName: String) {
+        namePrompt = NamePromptState(
+            title: "Rename",
+            placeholder: "New name",
+            initialValue: entryName,
+            paneSide: pane,
+            mode: .rename(entryName: entryName)
+        )
+    }
+
+    func confirmNamePrompt(_ value: String) async {
+        guard let prompt = namePrompt else { return }
+        namePrompt = nil
+        switch prompt.mode {
+        case .newFolder:
+            if prompt.paneSide == .local {
+                if fileOps.createLocalDirectory(name: value, localPath: localPath) {
+                    await refreshLocal()
+                }
+            } else {
+                if await fileOps.createRemoteDirectory(
+                    name: value,
+                    backend: sessionCoordinator.backend,
+                    remotePath: remotePath
+                ) {
+                    await refreshRemote()
+                }
+            }
+        case let .rename(oldName):
+            if prompt.paneSide == .local {
+                if fileOps.renameLocal(from: oldName, to: value, localPath: localPath) {
+                    await refreshLocal()
+                }
+            } else {
+                if await fileOps.renameRemote(
+                    from: oldName,
+                    to: value,
+                    backend: sessionCoordinator.backend,
+                    remotePath: remotePath
+                ) {
+                    await refreshRemote()
+                }
+            }
+        }
+    }
+
+    func promptProperties(pane: FilePaneSide, entryName: String) {
+        let octal: String
+        if pane == .remote,
+           let entry = remotePane.remoteEntries.first(where: { $0.name == entryName }),
+           let perm = entry.permissions {
+            octal = String(format: "%o", perm.octal)
+        } else {
+            octal = "644"
+        }
+        propertiesPrompt = PropertiesPromptState(
+            paneSide: pane,
+            entryName: entryName,
+            permissionsOctal: octal
+        )
+    }
+
+    func saveProperties(octal: String) async {
+        guard let prompt = propertiesPrompt else { return }
+        propertiesPrompt = nil
+        guard prompt.paneSide == .remote,
+              let value = UInt32(octal, radix: 8) else { return }
+        if await fileOps.setRemotePermissions(
+            FilePermissions(octal: value),
+            name: prompt.entryName,
+            backend: sessionCoordinator.backend,
+            remotePath: remotePath
+        ) {
+            await refreshRemote()
+        }
+    }
+
+    func deleteSelected(pane: FilePaneSide) async {
+        switch pane {
+        case .local:
+            if fileOps.deleteLocal(names: Array(localPane.selectedLocalNames), localPath: localPath) {
+                await refreshLocal()
+            }
+        case .remote:
+            if await fileOps.deleteRemote(
+                names: Array(remotePane.selectedRemoteNames),
+                entries: remotePane.remoteEntries,
+                backend: sessionCoordinator.backend,
+                remotePath: remotePath
+            ) {
+                await refreshRemote()
+            }
+        }
+    }
+
     private func schedulePaneRefresh(afterJobID jobID: UUID) {
         // Debounce listing refresh so bursts of small files do not hammer listDirectory.
         paneRefreshTask?.cancel()
@@ -249,6 +487,7 @@ struct SessionProfileDraft: Equatable {
     var keyPath: String = "~/.ssh/id_ed25519"
     var authMethod: AuthMethod = .publicKey
     var initialRemotePath: String = "/"
+    var hostKeyFingerprint: String = ""
 
     init() {}
 
@@ -261,6 +500,7 @@ struct SessionProfileDraft: Equatable {
         keyPath = profile.keyPath ?? "~/.ssh/id_ed25519"
         authMethod = profile.authMethod
         initialRemotePath = profile.initialRemotePath
+        hostKeyFingerprint = profile.hostKeyFingerprint ?? ""
     }
 
     func validatePort() -> Bool {
@@ -278,7 +518,8 @@ struct SessionProfileDraft: Equatable {
             password: authMethod == .password ? (password.isEmpty ? nil : password) : nil,
             authMethod: authMethod,
             keyPath: authMethod == .publicKey ? keyPath : nil,
-            initialRemotePath: initialRemotePath
+            initialRemotePath: initialRemotePath,
+            hostKeyFingerprint: hostKeyFingerprint.isEmpty ? nil : hostKeyFingerprint
         )
     }
 

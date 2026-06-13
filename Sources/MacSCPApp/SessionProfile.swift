@@ -16,10 +16,11 @@ struct SessionProfile: Identifiable, Codable, Equatable {
     var authMethod: AuthMethod
     var keyPath: String?
     var initialRemotePath: String
+    var hostKeyFingerprint: String?
     var favorite: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, group, host, port, username, authMethod, keyPath, initialRemotePath, favorite
+        case id, name, group, host, port, username, authMethod, keyPath, initialRemotePath, favorite, hostKeyFingerprint
         case password // legacy plaintext migration only
     }
 
@@ -34,6 +35,7 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         authMethod: AuthMethod = .publicKey,
         keyPath: String? = nil,
         initialRemotePath: String = "/",
+        hostKeyFingerprint: String? = nil,
         favorite: Bool = false
     ) {
         self.id = id
@@ -46,6 +48,7 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         self.authMethod = authMethod
         self.keyPath = keyPath
         self.initialRemotePath = initialRemotePath
+        self.hostKeyFingerprint = hostKeyFingerprint
         self.favorite = favorite
     }
 
@@ -60,6 +63,7 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         authMethod = try container.decode(AuthMethod.self, forKey: .authMethod)
         keyPath = try container.decodeIfPresent(String.self, forKey: .keyPath)
         initialRemotePath = try container.decodeIfPresent(String.self, forKey: .initialRemotePath) ?? "/"
+        hostKeyFingerprint = try container.decodeIfPresent(String.self, forKey: .hostKeyFingerprint)
         favorite = try container.decodeIfPresent(Bool.self, forKey: .favorite) ?? false
 
         if let legacyPassword = try container.decodeIfPresent(String.self, forKey: .password) {
@@ -80,11 +84,16 @@ struct SessionProfile: Identifiable, Codable, Equatable {
         try container.encode(authMethod, forKey: .authMethod)
         try container.encodeIfPresent(keyPath, forKey: .keyPath)
         try container.encode(initialRemotePath, forKey: .initialRemotePath)
+        try container.encodeIfPresent(hostKeyFingerprint, forKey: .hostKeyFingerprint)
         try container.encode(favorite, forKey: .favorite)
     }
 
     var sessionConfiguration: SessionConfiguration {
-        SessionConfiguration(
+        var advanced = AdvancedSettings()
+        if let hostKeyFingerprint, !hostKeyFingerprint.isEmpty {
+            advanced.hostKeyFingerprint = hostKeyFingerprint
+        }
+        return SessionConfiguration(
             id: id,
             name: name,
             protocol: .sftp,
@@ -94,7 +103,8 @@ struct SessionProfile: Identifiable, Codable, Equatable {
             password: password,
             authMethod: authMethod,
             keyPath: keyPath,
-            initialRemotePath: initialRemotePath
+            initialRemotePath: initialRemotePath,
+            advanced: advanced
         )
     }
 
