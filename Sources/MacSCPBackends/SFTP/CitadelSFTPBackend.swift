@@ -165,7 +165,18 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         options: TransferOptions
     ) async throws -> TransferResult {
         let sftp = try requireSFTP()
-        let resolved = resolveRemotePath(remotePath)
+        try options.throwIfCancelled()
+
+        guard let resolved = await TransferDestinationResolver.resolveRemoteUploadPath(
+            path: resolveRemotePath(remotePath),
+            policy: options.overwrite,
+            remoteExists: { path in
+                await TransferDestinationResolver.remotePathExists(sftp: sftp, path: path)
+            }
+        ) else {
+            return TransferResult(bytesTransferred: 0)
+        }
+
         if let parent = CitadelUploadPlanner.parentDirectory(of: resolved) {
             try await ensureParentDirectoryCached(parent)
         }
@@ -196,6 +207,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         totalSize: Int,
         options: TransferOptions
     ) async throws -> TransferResult {
+        try options.throwIfCancelled()
         let data = try Data(contentsOf: localURL)
         let transferID = UUID()
         let start = Date()
@@ -204,6 +216,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
             filePath: resolved,
             flags: [.write, .create, .truncate]
         ) { file in
+            try options.throwIfCancelled()
             let buffer = ByteBuffer(data: data)
             try await file.write(buffer, at: 0)
         }
@@ -271,7 +284,8 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
                 maxConcurrentWrites: options.maxConcurrentWrites,
                 transferID: transferID,
                 remotePath: resolved,
-                progress: options.progress
+                progress: options.progress,
+                cancellation: options.cancellation
             )
         } else {
             bytesWritten = try await uploadLargeFileSequential(
@@ -316,6 +330,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         let start = Date()
 
         while Int(offset) < totalSize {
+            try options.throwIfCancelled()
             let toRead = min(chunkSize, totalSize - Int(offset))
             let chunk = try handle.read(upToCount: toRead) ?? Data()
             if chunk.isEmpty { break }
@@ -397,7 +412,16 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         options: TransferOptions
     ) async throws -> TransferResult {
         let sftp = try requireSFTP()
+        try options.throwIfCancelled()
         let resolved = resolveRemotePath(remotePath)
+
+        guard let destination = try TransferDestinationResolver.resolveLocalDownloadURL(
+            localURL,
+            policy: options.overwrite
+        ) else {
+            return TransferResult(bytesTransferred: 0)
+        }
+
         let attrs = try await sftp.getAttributes(at: resolved)
         guard let remoteSize = attrs.size else {
             throw BackendError.transferFailed("Remote file has unknown size: \(resolved)")
@@ -406,8 +430,8 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         var offset: UInt64 = 0
         var resumedFrom: Int64?
 
-        if options.resume, FileManager.default.fileExists(atPath: localURL.path) {
-            let localSize = try localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        if options.resume, FileManager.default.fileExists(atPath: destination.path) {
+            let localSize = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
             if localSize > 0, UInt64(localSize) < remoteSize {
                 offset = UInt64(localSize)
                 resumedFrom = Int64(localSize)
@@ -417,12 +441,12 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         let file = try await sftp.openFile(filePath: resolved, flags: .read)
 
         if offset == 0 {
-            FileManager.default.createFile(atPath: localURL.path, contents: nil)
-        } else if !FileManager.default.fileExists(atPath: localURL.path) {
+            FileManager.default.createFile(atPath: destination.path, contents: nil)
+        } else if !FileManager.default.fileExists(atPath: destination.path) {
             throw BackendError.transferFailed("Cannot resume: local file missing")
         }
 
-        let handle = try FileHandle(forWritingTo: localURL)
+        let handle = try FileHandle(forWritingTo: destination)
         defer { try? handle.close() }
 
         if offset > 0 {
@@ -435,6 +459,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         let start = Date()
 
         while offset < remoteSize {
+            try options.throwIfCancelled()
             let length = min(chunkSize, UInt32(remoteSize - offset))
             let buffer = try await file.read(from: offset, length: length)
             let data = Data(buffer: buffer)
@@ -462,7 +487,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
 
         var checksum: String?
         if options.checksum == .sha256 {
-            checksum = try Checksum.sha256(of: localURL)
+            checksum = try Checksum.sha256(of: destination)
         }
 
         return TransferResult(

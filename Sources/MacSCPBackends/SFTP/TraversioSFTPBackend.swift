@@ -200,19 +200,32 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
         options: TransferOptions
     ) async throws -> TransferResult {
         let sftp = try requireSFTP()
-        let resolved = resolveRemotePath(remotePath)
+        try options.throwIfCancelled()
+
+        guard let resolved = await TransferDestinationResolver.resolveRemoteUploadPath(
+            path: resolveRemotePath(remotePath),
+            policy: options.overwrite,
+            remoteExists: { path in
+                (try? await sftp.stat(path)) != nil
+            }
+        ) else {
+            return TransferResult(bytesTransferred: 0)
+        }
+
         if let parent = CitadelUploadPlanner.parentDirectory(of: resolved) {
             try await ensureParentDirectoryCached(parent)
         }
 
         let totalSize = try CitadelUploadPlanner.localFileSize(at: localURL)
         let start = Date()
+        let shouldContinue = TransferContinuationFactory.shouldContinue(for: options.cancellation)
         let bytes = try await sftp.uploadFile(
             from: localURL,
             to: resolved,
             chunkSize: UInt32(max(options.chunkSize, 32 * 1024)),
             maxConcurrentWrites: max(options.maxConcurrentWrites, 1),
-            syncAfterWrite: false
+            syncAfterWrite: false,
+            shouldContinue: shouldContinue
         )
 
         if let progress = options.progress {
@@ -243,13 +256,24 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
         options: TransferOptions
     ) async throws -> TransferResult {
         let sftp = try requireSFTP()
+        try options.throwIfCancelled()
         let resolved = resolveRemotePath(remotePath)
+
+        guard let destination = try TransferDestinationResolver.resolveLocalDownloadURL(
+            localURL,
+            policy: options.overwrite
+        ) else {
+            return TransferResult(bytesTransferred: 0)
+        }
+
         let start = Date()
+        let shouldContinue = TransferContinuationFactory.shouldContinue(for: options.cancellation)
         let bytes = try await sftp.downloadFile(
             resolved,
-            to: localURL,
+            to: destination,
             chunkSize: UInt32(max(options.chunkSize, 32 * 1024)),
-            maxConcurrentReads: max(options.maxConcurrentUploads, 1)
+            maxConcurrentReads: max(options.maxConcurrentUploads, 1),
+            shouldContinue: shouldContinue
         )
 
         if let progress = options.progress {
@@ -268,7 +292,7 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
 
         var checksum: String?
         if options.checksum == .sha256 {
-            checksum = try Checksum.sha256(of: localURL)
+            checksum = try Checksum.sha256(of: destination)
         }
 
         return TransferResult(bytesTransferred: Int64(bytes), checksum: checksum)

@@ -28,7 +28,8 @@ enum CitadelPipelinedWriter {
         maxConcurrentWrites: Int,
         transferID: UUID,
         remotePath: String,
-        progress: ProgressHandler?
+        progress: ProgressHandler?,
+        cancellation: TransferCancellation?
     ) async throws -> Int64 {
         let coordinator = WriteCoordinator(file: file)
         let window = max(1, maxConcurrentWrites)
@@ -56,6 +57,11 @@ enum CitadelPipelinedWriter {
 
         do {
             while confirmedOffset < UInt64(totalSize) || !inFlight.isEmpty {
+                if cancellation?.isCancelled == true || Task.isCancelled {
+                    for item in inFlight { item.task.cancel() }
+                    throw BackendError.cancelled
+                }
+                try cancellation?.throwIfCancelled()
                 while inFlight.count < window, readOffset < UInt64(totalSize) {
                     let remaining = totalSize - Int(readOffset)
                     let chunkLength = min(sftpPacketSize, remaining)
@@ -76,7 +82,11 @@ enum CitadelPipelinedWriter {
                 guard !inFlight.isEmpty else { break }
 
                 let next = inFlight.removeFirst()
-                try await next.task.value
+                do {
+                    try await next.task.value
+                } catch is CancellationError {
+                    throw BackendError.cancelled
+                }
                 confirmedOffset = next.offset + UInt64(next.length)
                 reportProgress()
             }

@@ -20,6 +20,7 @@ final class AppModel: TransferBackendProvider {
     var activeSessionName = ""
     var selectedLocalNames = Set<String>()
     var selectedRemoteNames = Set<String>()
+    var overwritePrompt: PendingTransferBatch?
     let transferQueue = TransferQueue()
 
     private var backend: TransferBackend?
@@ -139,44 +140,124 @@ final class AppModel: TransferBackendProvider {
     }
 
     func uploadSelected() {
-        guard backend != nil else { return }
         let files = localEntries.filter { selectedLocalNames.contains($0.name) && !$0.isDirectory }
         guard !files.isEmpty else {
             statusMessage = "Select local files to upload"
             return
         }
-
-        for file in files {
-            let localURL = localPath.appendingPathComponent(file.name)
-            let remote = joinRemote(remotePath, file.name)
-            transferQueue.enqueueUpload(
-                localURL: localURL,
-                remotePath: remote,
-                totalBytes: file.size
+        let items = files.map { file in
+            PendingTransferItem(
+                localURL: localPath.appendingPathComponent(file.name),
+                remotePath: joinRemote(remotePath, file.name),
+                totalBytes: file.size,
+                hasConflict: remoteFileExists(named: file.name)
             )
         }
-        statusMessage = "Queued \(files.count) upload(s)"
+        queueTransfers(kind: .upload, items: items)
         selectedLocalNames = []
     }
 
     func downloadSelected() {
-        guard backend != nil else { return }
         let files = remoteEntries.filter { selectedRemoteNames.contains($0.name) && $0.type == .file }
         guard !files.isEmpty else {
             statusMessage = "Select remote files to download"
             return
         }
-
-        for file in files {
-            let localURL = localPath.appendingPathComponent(file.name)
-            transferQueue.enqueueDownload(
+        let items = files.map { file in
+            PendingTransferItem(
+                localURL: localPath.appendingPathComponent(file.name),
                 remotePath: file.path,
-                localURL: localURL,
-                totalBytes: file.size
+                totalBytes: file.size,
+                hasConflict: FileManager.default.fileExists(atPath: localPath.appendingPathComponent(file.name).path)
             )
         }
-        statusMessage = "Queued \(files.count) download(s)"
+        queueTransfers(kind: .download, items: items)
         selectedRemoteNames = []
+    }
+
+    func uploadDropped(fileNames: [String]) {
+        let files = localEntries.filter { fileNames.contains($0.name) && !$0.isDirectory }
+        guard !files.isEmpty else { return }
+        let items = files.map { file in
+            PendingTransferItem(
+                localURL: localPath.appendingPathComponent(file.name),
+                remotePath: joinRemote(remotePath, file.name),
+                totalBytes: file.size,
+                hasConflict: remoteFileExists(named: file.name)
+            )
+        }
+        queueTransfers(kind: .upload, items: items)
+    }
+
+    func downloadDropped(fileNames: [String]) {
+        let files = remoteEntries.filter { fileNames.contains($0.name) && $0.type == .file }
+        guard !files.isEmpty else { return }
+        let items = files.map { file in
+            PendingTransferItem(
+                localURL: localPath.appendingPathComponent(file.name),
+                remotePath: file.path,
+                totalBytes: file.size,
+                hasConflict: FileManager.default.fileExists(atPath: localPath.appendingPathComponent(file.name).path)
+            )
+        }
+        queueTransfers(kind: .download, items: items)
+    }
+
+    func resolveOverwritePrompt(action: OverwriteBatchAction) {
+        guard let batch = overwritePrompt else { return }
+        overwritePrompt = nil
+
+        switch action {
+        case .cancel:
+            statusMessage = "Transfer cancelled"
+            return
+        case .overwriteAll:
+            enqueueBatch(batch, policy: .overwrite)
+        case .skipExisting:
+            enqueueBatch(batch, policy: .skip)
+        case .renameAll:
+            enqueueBatch(batch, policy: .rename)
+        }
+    }
+
+    private func queueTransfers(kind: PendingTransferBatch.Kind, items: [PendingTransferItem]) {
+        guard backend != nil, !items.isEmpty else { return }
+
+        if items.contains(where: \.hasConflict) {
+            overwritePrompt = PendingTransferBatch(kind: kind, items: items)
+            statusMessage = "Confirm overwrite for \(overwritePrompt?.conflictNames.count ?? 0) file(s)"
+            return
+        }
+
+        enqueueBatch(PendingTransferBatch(kind: kind, items: items), policy: .overwrite)
+    }
+
+    private func enqueueBatch(_ batch: PendingTransferBatch, policy: OverwritePolicy) {
+        for item in batch.items {
+            let effectivePolicy: OverwritePolicy = item.hasConflict ? policy : .overwrite
+
+            switch batch.kind {
+            case .upload:
+                transferQueue.enqueueUpload(
+                    localURL: item.localURL,
+                    remotePath: item.remotePath,
+                    totalBytes: item.totalBytes,
+                    overwritePolicy: effectivePolicy
+                )
+            case .download:
+                transferQueue.enqueueDownload(
+                    remotePath: item.remotePath,
+                    localURL: item.localURL,
+                    totalBytes: item.totalBytes,
+                    overwritePolicy: effectivePolicy
+                )
+            }
+        }
+        statusMessage = "Queued \(batch.items.count) transfer(s)"
+    }
+
+    private func remoteFileExists(named name: String) -> Bool {
+        remoteEntries.contains { $0.name == name && $0.type == .file }
     }
 
     func transferDidComplete(jobID: UUID) {

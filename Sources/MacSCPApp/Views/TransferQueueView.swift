@@ -27,7 +27,7 @@ struct TransferQueueView: View {
                     .controlSize(.small)
                     .disabled(!queue.jobs.contains {
                         switch $0.state {
-                        case .completed, .cancelled, .failed: true
+                        case .completed, .cancelled, .failed, .skipped: true
                         default: false
                         }
                     })
@@ -124,6 +124,8 @@ private struct TransferJobRow: View {
             Text("Paused").font(.caption).foregroundStyle(.orange)
         case .completed:
             Text("Done").font(.caption).foregroundStyle(.green)
+        case .skipped:
+            Text("Skipped").font(.caption).foregroundStyle(.secondary)
         case .cancelled:
             Text("Cancelled").font(.caption).foregroundStyle(.secondary)
         case let .failed(message):

@@ -62,6 +62,8 @@ public struct TransferOptions: Sendable {
     public var smallFileThreshold: Int
     /// In-flight SFTP WRITE requests per open file handle (Citadel pipelined upload).
     public var maxConcurrentWrites: Int
+    /// When set, backends poll this during transfers for mid-flight cancel.
+    public var cancellation: TransferCancellation?
 
     public init(
         resume: Bool = false,
@@ -72,7 +74,8 @@ public struct TransferOptions: Sendable {
         chunkSize: Int = 1024 * 1024,
         maxConcurrentUploads: Int = 8,
         smallFileThreshold: Int = 512 * 1024,
-        maxConcurrentWrites: Int = 8
+        maxConcurrentWrites: Int = 8,
+        cancellation: TransferCancellation? = nil
     ) {
         self.resume = resume
         self.overwrite = overwrite
@@ -83,6 +86,11 @@ public struct TransferOptions: Sendable {
         self.maxConcurrentUploads = maxConcurrentUploads
         self.smallFileThreshold = smallFileThreshold
         self.maxConcurrentWrites = maxConcurrentWrites
+        self.cancellation = cancellation
+    }
+
+    public func throwIfCancelled() throws {
+        try cancellation?.throwIfCancelled()
     }
 }
 

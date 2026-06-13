@@ -10,6 +10,7 @@ struct CommanderView: View {
             Divider()
             HSplitView {
                 FilePaneView(
+                    paneSide: .local,
                     title: "LOCAL",
                     subtitle: appModel.localPath.path,
                     entries: appModel.localEntries.map { .local($0) },
@@ -20,9 +21,13 @@ struct CommanderView: View {
                         if case let .local(local) = entry, local.isDirectory {
                             appModel.openLocalDirectory(local.name)
                         }
+                    },
+                    onDropFromOpposite: { payload in
+                        appModel.downloadDropped(fileNames: payload.fileNames)
                     }
                 )
                 FilePaneView(
+                    paneSide: .remote,
                     title: "REMOTE",
                     subtitle: "\(appModel.draft.host):\(appModel.remotePath)",
                     entries: appModel.remoteEntries.map { .remote($0) },
@@ -33,6 +38,9 @@ struct CommanderView: View {
                         if case let .remote(remote) = entry, remote.type == .directory {
                             Task { await appModel.openRemoteDirectory(remote.name) }
                         }
+                    },
+                    onDropFromOpposite: { payload in
+                        appModel.uploadDropped(fileNames: payload.fileNames)
                     }
                 )
             }
@@ -42,6 +50,11 @@ struct CommanderView: View {
             statusBar
         }
         .navigationTitle(appModel.activeSessionName)
+        .sheet(item: Bindable(appModel).overwritePrompt) { batch in
+            OverwritePromptView(batch: batch) { action in
+                appModel.resolveOverwritePrompt(action: action)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 if appModel.transferQueue.activeCount > 0 {
@@ -176,6 +189,7 @@ enum PaneEntry: Identifiable {
 }
 
 struct FilePaneView: View {
+    let paneSide: FilePaneSide
     let title: String
     let subtitle: String
     let entries: [PaneEntry]
@@ -183,6 +197,7 @@ struct FilePaneView: View {
     let onRefresh: () -> Void
     let onUp: () -> Void
     let onOpen: (PaneEntry) -> Void
+    let onDropFromOpposite: (PaneDragPayload) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -204,25 +219,71 @@ struct FilePaneView: View {
             .padding(.vertical, 8)
             Divider()
             List(entries, selection: $selection) { entry in
-                HStack {
-                    Image(systemName: entry.isDirectory ? "folder.fill" : "doc")
-                        .foregroundStyle(entry.isDirectory ? .blue : .secondary)
-                    Text(entry.name)
-                    Spacer()
-                    Text(formatSize(entry.size, isDirectory: entry.isDirectory))
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-                .tag(entry.name)
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) {
-                    if entry.isDirectory {
-                        onOpen(entry)
-                    }
-                }
+                row(for: entry)
             }
             .listStyle(.plain)
         }
+        .dropDestination(for: PaneDragPayload.self) { payloads, _ in
+            guard let payload = payloads.first, paneSide.acceptsDrop(from: payload.side) else {
+                return false
+            }
+            onDropFromOpposite(payload)
+            return true
+        } isTargeted: { isTargeted in
+            dropTargeted = isTargeted
+        }
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(.blue, style: StrokeStyle(lineWidth: 2, dash: [6]))
+                    .padding(4)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    @State private var dropTargeted = false
+
+    @ViewBuilder
+    private func row(for entry: PaneEntry) -> some View {
+        let content = HStack {
+            Image(systemName: entry.isDirectory ? "folder.fill" : "doc")
+                .foregroundStyle(entry.isDirectory ? .blue : .secondary)
+            Text(entry.name)
+            Spacer()
+            Text(formatSize(entry.size, isDirectory: entry.isDirectory))
+                .foregroundStyle(.secondary)
+                .font(.caption)
+        }
+        .tag(entry.name)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            if entry.isDirectory {
+                onOpen(entry)
+            }
+        }
+
+        if let payload = dragPayload(for: entry) {
+            content.draggable(payload) {
+                Label(entry.name, systemImage: "doc")
+                    .padding(8)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
+        } else {
+            content
+        }
+    }
+
+    private func dragPayload(for entry: PaneEntry) -> PaneDragPayload? {
+        guard !entry.isDirectory else { return nil }
+        let names: [String]
+        if selection.contains(entry.name) {
+            names = entries.filter { selection.contains($0.name) && !$0.isDirectory }.map(\.name)
+        } else {
+            names = [entry.name]
+        }
+        guard !names.isEmpty else { return nil }
+        return PaneDragPayload(side: paneSide.dragSide, fileNames: names)
     }
 
     private func formatSize(_ size: Int64?, isDirectory: Bool) -> String {
