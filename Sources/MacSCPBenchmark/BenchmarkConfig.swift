@@ -58,6 +58,13 @@ public struct BenchmarkConfig: Sendable {
     }
 }
 
+public struct BenchmarkTimingBreakdown: Codable, Sendable {
+    public var connectSeconds: Double
+    public var transferSeconds: Double
+    public var checksumSeconds: Double?
+    public var disconnectSeconds: Double
+}
+
 public struct BenchmarkResult: Codable, Sendable {
     public var scenario: String
     public var backend: String
@@ -69,6 +76,7 @@ public struct BenchmarkResult: Codable, Sendable {
     public var sha256Match: Bool?
     public var passed: Bool
     public var notes: String?
+    public var timingBreakdown: BenchmarkTimingBreakdown?
 }
 
 public struct BenchmarkReport: Codable, Sendable {

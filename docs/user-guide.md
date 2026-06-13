@@ -148,12 +148,15 @@ retention_days = 14    # delete log files older than this (0 = keep all)
 mirror_stderr = false
 
 [transfer]
+preset = "default"     # default | lan | wan
 max_concurrent_transfers = 2
-max_concurrent_writes = 8
+max_concurrent_writes = 16
 max_concurrent_reads = 8
-max_concurrent_uploads = 8
+max_concurrent_uploads = 12
 chunk_size = 1048576
 resume = true
+verify_checksums = false
+use_traversio_for_performance = false  # AGPL — see §5.4
 ```
 
 Host keys are stored with trust-on-first-use in `~/.macscp/known_hosts.json`. Set `hostKeyFingerprint` in a session profile's advanced settings to pin a specific key.
@@ -340,7 +343,13 @@ sftp user@host
 
 ### Slow Uploads
 
-MacSCP uses pipelined SFTP reads/writes on the Citadel backend when `[transfer].max_concurrent_reads` / `max_concurrent_writes` > 1. Tune concurrency in `~/.macscp/config.toml`. Benchmark details: [SFTP backend spike](spikes/sftp-backend-spike.md).
+MacSCP uses read-ahead pipelined SFTP I/O on the Citadel backend when `[transfer].max_concurrent_reads` / `max_concurrent_writes` > 1. When `max_concurrent_transfers` > 1, the app opens multiple SFTP connections (one per slot) so parallel queue jobs do not serialize on a single handle.
+
+**Presets:** set `preset = "lan"` for high-throughput LAN tuning, or `preset = "wan"` for conservative settings. Explicit keys listed after `preset` override preset defaults.
+
+**Traversio performance mode:** `use_traversio_for_performance = true` switches key/password sessions to the Traversio backend (AGPL). SSH agent sessions always use Traversio.
+
+Tune concurrency in `~/.macscp/config.toml`. Benchmark details: [SFTP backend spike](spikes/sftp-backend-spike.md).
 
 ---
 

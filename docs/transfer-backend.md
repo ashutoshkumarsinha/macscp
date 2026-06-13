@@ -172,16 +172,20 @@ MacSCPBackends/SFTP/
   TransferDestinationResolver.swift
   MacSCPHostKeySupport.swift    # TOFU known_hosts.json
   SSHAgentAuthSupport.swift     # Traversio ssh-agent wrapper
+  PooledTransferBackend.swift   # Multi-connection pool for parallel queue jobs
   SerializingTransferBackend.swift
   SFTPErrorHelpers.swift
 ```
 
 ### Performance notes
 
-- **Small files** (< `smallFileThreshold`): single SFTP write/read.
-- **Large files**: chunked I/O; Citadel uses pipelined windows when `maxConcurrentWrites` / `maxConcurrentReads` > 1.
-- **Batch uploads**: `uploadBatch` with `maxConcurrentUploads` from config.
-- **Directory uploads**: app expands trees via `DirectoryTransferPlanner`; backends ensure parent dirs via `SFTPDirectoryCache`.
+- **Small files** (< `smallFileThreshold`, default 256 KB): single SFTP write/read.
+- **Large files**: chunked I/O with read-ahead overlap (Citadel read-ahead on download; local read-ahead on upload when `maxConcurrentWrites` > 1).
+- **Batch uploads**: `uploadBatch` with `maxConcurrentUploads`; remote paths sorted for directory-cache locality; skip/rename policies still stat when needed.
+- **Overwrite uploads**: no remote `stat` when policy is `.overwrite` or `.prompt`.
+- **Parallel queue jobs**: when `max_concurrent_transfers` > 1, `PooledTransferBackend` opens one SFTP connection per slot.
+- **Checksums**: optional via `verify_checksums` in config (`TransferOptions.verifyChecksum`); off by default for throughput.
+- **Presets**: `preset = "lan"` / `"wan"` in `~/.macscp/config.toml` apply tuned defaults (see user guide §5.4).
 
 ---
 

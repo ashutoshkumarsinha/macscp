@@ -51,10 +51,35 @@ final class MacSCPConfigurationTests: XCTestCase {
         max_concurrent_transfers = 4
         max_concurrent_writes = 16
         resume = false
+        verify_checksums = true
         """
         let settings = MacSCPConfiguration.parseSettings(from: toml)
         XCTAssertEqual(settings.transfer.maxConcurrentTransfers, 4)
         XCTAssertEqual(settings.transfer.maxConcurrentWrites, 16)
         XCTAssertFalse(settings.transfer.resume)
+        XCTAssertTrue(settings.transfer.verifyChecksums)
+    }
+
+    func testLanPresetAppliesThroughputDefaults() {
+        let toml = """
+        [transfer]
+        preset = "lan"
+        """
+        let settings = MacSCPConfiguration.parseSettings(from: toml)
+        XCTAssertEqual(settings.transfer.preset, .lan)
+        XCTAssertEqual(settings.transfer.maxConcurrentTransfers, 4)
+        XCTAssertEqual(settings.transfer.maxConcurrentWrites, 32)
+        XCTAssertEqual(settings.transfer.maxConcurrentUploads, 16)
+        XCTAssertFalse(settings.transfer.verifyChecksums)
+    }
+
+    func testExplicitTransferKeysOverridePreset() {
+        let toml = """
+        [transfer]
+        preset = "lan"
+        max_concurrent_writes = 10
+        """
+        let settings = MacSCPConfiguration.parseSettings(from: toml)
+        XCTAssertEqual(settings.transfer.maxConcurrentWrites, 10)
     }
 }

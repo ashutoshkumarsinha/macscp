@@ -6,6 +6,7 @@ struct BenchmarkRunner {
     let config: BenchmarkConfig
 
     func runAll() async throws -> BenchmarkReport {
+        BenchmarkEnvironment.prepare()
         var results: [BenchmarkResult] = []
 
         for size in config.largeFileSizes {
@@ -25,6 +26,19 @@ struct BenchmarkRunner {
 
     private enum Direction { case upload, download }
 
+    private func benchmarkTransferOptions(checksum: ChecksumAlgorithm? = nil) -> TransferOptions {
+        TransferOptions(
+            overwrite: .overwrite,
+            checksum: checksum,
+            chunkSize: 1024 * 1024,
+            maxConcurrentUploads: 12,
+            smallFileThreshold: 256 * 1024,
+            maxConcurrentWrites: 16,
+            maxConcurrentReads: 8,
+            verifyChecksum: checksum != nil
+        )
+    }
+
     private func runLargeFile(size: Int, direction: Direction) async throws -> BenchmarkResult {
         let label = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
         let local = config.workDirectory.appendingPathComponent("large_\(size).bin")
@@ -32,36 +46,87 @@ struct BenchmarkRunner {
         try FixtureGenerator.largeFile(at: local, size: size)
 
         let backend = CitadelSFTPBackend()
-        try await backend.connect(configuration: config.sessionConfiguration())
 
-        let start = Date()
+        let connectStart = Date()
+        try await backend.connect(configuration: config.sessionConfiguration())
+        let connectSeconds = Date().timeIntervalSince(connectStart)
+
         switch direction {
         case .upload:
-            _ = try await backend.upload(localURL: local, remotePath: remote, options: TransferOptions(checksum: .sha256))
+            let transferStart = Date()
+            _ = try await backend.upload(
+                localURL: local,
+                remotePath: remote,
+                options: benchmarkTransferOptions()
+            )
+            let transferSeconds = Date().timeIntervalSince(transferStart)
+
+            let checksumStart = Date()
+            _ = try Checksum.sha256(of: local)
+            let checksumSeconds = Date().timeIntervalSince(checksumStart)
+
             let opensshTime = try OpenSSHSFTPBaseline.upload(local: local, remotePath: remote, config: config)
-            let citadelTime = Date().timeIntervalSince(start)
+
+            let disconnectStart = Date()
             try await backend.disconnect()
-            return compareThroughput(
+            let disconnectSeconds = Date().timeIntervalSince(disconnectStart)
+
+            var result = compareThroughput(
                 scenario: "large_upload_\(label)",
-                citadelSeconds: citadelTime,
+                citadelSeconds: transferSeconds,
                 baselineSeconds: opensshTime,
                 bytes: Int64(size)
             )
+            result.timingBreakdown = BenchmarkTimingBreakdown(
+                connectSeconds: connectSeconds,
+                transferSeconds: transferSeconds,
+                checksumSeconds: checksumSeconds,
+                disconnectSeconds: disconnectSeconds
+            )
+            result.notes = (result.notes ?? "") + String(
+                format: " connect=%.3fs transfer=%.3fs checksum=%.3fs disconnect=%.3fs",
+                connectSeconds, transferSeconds, checksumSeconds, disconnectSeconds
+            )
+            return result
+
         case .download:
-            _ = try await backend.download(remotePath: remote, localURL: local.appendingPathExtension("dl"), options: TransferOptions(checksum: .sha256))
-            let citadelTime = Date().timeIntervalSince(start)
-            let dlLocal = config.workDirectory.appendingPathComponent("large_\(size).bin.openssh")
-            let opensshTime = try OpenSSHSFTPBaseline.download(remotePath: remote, local: dlLocal, config: config)
-            let match = try Checksum.sha256(of: local.appendingPathExtension("dl")) == Checksum.sha256(of: dlLocal)
+            _ = try await backend.upload(
+                localURL: local,
+                remotePath: remote,
+                options: benchmarkTransferOptions()
+            )
+
+            let transferStart = Date()
+            let dlLocal = local.appendingPathExtension("dl")
+            _ = try await backend.download(
+                remotePath: remote,
+                localURL: dlLocal,
+                options: benchmarkTransferOptions(checksum: .sha256)
+            )
+            let transferSeconds = Date().timeIntervalSince(transferStart)
+
+            let opensshLocal = config.workDirectory.appendingPathComponent("large_\(size).bin.openssh")
+            let opensshTime = try OpenSSHSFTPBaseline.download(remotePath: remote, local: opensshLocal, config: config)
+            let match = try Checksum.sha256(of: dlLocal) == Checksum.sha256(of: opensshLocal)
+
+            let disconnectStart = Date()
+            try await backend.disconnect()
+            let disconnectSeconds = Date().timeIntervalSince(disconnectStart)
+
             var result = compareThroughput(
                 scenario: "large_download_\(label)",
-                citadelSeconds: citadelTime,
+                citadelSeconds: transferSeconds,
                 baselineSeconds: opensshTime,
                 bytes: Int64(size)
             )
             result.sha256Match = match
             result.passed = result.passed && match
-            try await backend.disconnect()
+            result.timingBreakdown = BenchmarkTimingBreakdown(
+                connectSeconds: connectSeconds,
+                transferSeconds: transferSeconds,
+                checksumSeconds: nil,
+                disconnectSeconds: disconnectSeconds
+            )
             return result
         }
     }
@@ -83,15 +148,7 @@ struct BenchmarkRunner {
             let items = files.map {
                 BatchUploadItem(localURL: $0, remotePath: "\(remoteDir)/\($0.lastPathComponent)")
             }
-            _ = try await backend.uploadBatch(
-                items: items,
-                options: TransferOptions(
-                    checksum: nil,
-                    chunkSize: 1024 * 1024,
-                    maxConcurrentUploads: 12,
-                    smallFileThreshold: 512 * 1024
-                )
-            )
+            _ = try await backend.uploadBatch(items: items, options: benchmarkTransferOptions())
             let citadelTime = Date().timeIntervalSince(start)
 
             let opensshStart = Date()
@@ -112,13 +169,14 @@ struct BenchmarkRunner {
                 bytes: Int64(count * 4096),
                 sha256Match: nil,
                 passed: ratio >= 0.80,
-                notes: String(format: "ratio=%.2f (need >=0.80)", ratio)
+                notes: String(format: "ratio=%.2f (need >=0.80)", ratio),
+                timingBreakdown: nil
             )
         case .download:
             let files = try await backend.listDirectory(at: remoteDir)
             for entry in files where entry.type == .file {
                 let local = localDir.appendingPathComponent("dl_\(entry.name)")
-                _ = try await backend.download(remotePath: entry.path, localURL: local, options: TransferOptions(checksum: nil))
+                _ = try await backend.download(remotePath: entry.path, localURL: local, options: benchmarkTransferOptions())
             }
             let citadelTime = Date().timeIntervalSince(start)
             try await backend.disconnect()
@@ -132,7 +190,8 @@ struct BenchmarkRunner {
                 bytes: Int64(files.count * 4096),
                 sha256Match: nil,
                 passed: true,
-                notes: "baseline download batch not run (sequential sftp batch overhead)"
+                notes: "baseline download batch not run (sequential sftp batch overhead)",
+                timingBreakdown: nil
             )
         }
     }
@@ -160,7 +219,8 @@ struct BenchmarkRunner {
             bytes: 0,
             sha256Match: entries.count == count,
             passed: entries.count == count,
-            notes: String(format: "citadel=%d entries, openssh=%d, time_ratio=%.2f", entries.count, count, ratio)
+            notes: String(format: "citadel=%d entries, openssh=%d, time_ratio=%.2f", entries.count, count, ratio),
+            timingBreakdown: nil
         )
     }
 
@@ -172,7 +232,7 @@ struct BenchmarkRunner {
 
         let backend = CitadelSFTPBackend()
         try await backend.connect(configuration: config.sessionConfiguration())
-        _ = try await backend.upload(localURL: local, remotePath: remote, options: TransferOptions())
+        _ = try await backend.upload(localURL: local, remotePath: remote, options: benchmarkTransferOptions())
 
         let partial = config.workDirectory.appendingPathComponent("resume_partial.bin")
         let sourceData = try Data(contentsOf: local)
@@ -182,7 +242,7 @@ struct BenchmarkRunner {
         _ = try await backend.download(
             remotePath: remote,
             localURL: partial,
-            options: TransferOptions(resume: true, checksum: .sha256)
+            options: TransferOptions(resume: true, checksum: .sha256, verifyChecksum: true)
         )
 
         let expected = try Checksum.sha256(of: local)
@@ -200,7 +260,8 @@ struct BenchmarkRunner {
             bytes: Int64(size),
             sha256Match: match,
             passed: match,
-            notes: match ? "checksum ok" : "checksum mismatch"
+            notes: match ? "checksum ok" : "checksum mismatch",
+            timingBreakdown: nil
         )
     }
 
@@ -229,7 +290,8 @@ struct BenchmarkRunner {
             bytes: 0,
             sha256Match: nil,
             passed: true,
-            notes: "connected and listed \(entries.count) entries"
+            notes: "connected and listed \(entries.count) entries",
+            timingBreakdown: nil
         )
     }
 
@@ -241,7 +303,6 @@ struct BenchmarkRunner {
     ) -> BenchmarkResult {
         let citadelMBps = Double(bytes) / citadelSeconds / 1_048_576.0
         let ratio = citadelSeconds > 0 ? baselineSeconds / citadelSeconds : 0
-        // citadel >= 90% of openssh speed => citadelTime <= baseline/0.9 => ratio >= 0.9
         let passed = ratio >= 0.90
         return BenchmarkResult(
             scenario: scenario,
@@ -253,7 +314,8 @@ struct BenchmarkRunner {
             bytes: bytes,
             sha256Match: nil,
             passed: passed,
-            notes: String(format: "openssh=%.3fs citadel=%.3fs ratio=%.2f (need >=0.90)", baselineSeconds, citadelSeconds, ratio)
+            notes: String(format: "openssh=%.3fs citadel=%.3fs ratio=%.2f (need >=0.90)", baselineSeconds, citadelSeconds, ratio),
+            timingBreakdown: nil
         )
     }
 
@@ -294,5 +356,11 @@ struct BenchmarkRunner {
                 recommendation: recommendation
             )
         )
+    }
+}
+
+enum BenchmarkEnvironment {
+    static func prepare() {
+        MacSCPLogger.shared.configureForBenchmarks()
     }
 }

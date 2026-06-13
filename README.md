@@ -91,6 +91,14 @@ make bench-upload-spike
 
 Results: `.benchmark/benchmark-results/upload-spike.json`
 
+Upload profiling (sweep `maxConcurrentWrites`):
+
+```bash
+.build/debug/macscp-benchmark profile-upload
+```
+
+Results: `.benchmark/benchmark-results/profile-upload.json`
+
 ## Package DMG
 
 ```bash

@@ -12,6 +12,20 @@ final class TransferDestinationResolverTests: XCTestCase {
         XCTAssertEqual(resolved, "/remote/new.txt")
     }
 
+    func testResolveRemoteUploadPathOverwriteSkipsStat() async {
+        var callCount = 0
+        let resolved = await TransferDestinationResolver.resolveRemoteUploadPath(
+            path: "/remote/existing.txt",
+            policy: .overwrite,
+            remoteExists: { _ in
+                callCount += 1
+                return true
+            }
+        )
+        XCTAssertEqual(resolved, "/remote/existing.txt")
+        XCTAssertEqual(callCount, 0)
+    }
+
     func testResolveRemoteUploadPathSkipReturnsNilWhenExists() async {
         let resolved = await TransferDestinationResolver.resolveRemoteUploadPath(
             path: "/remote/existing.txt",

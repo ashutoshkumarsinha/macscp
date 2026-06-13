@@ -391,12 +391,13 @@ public final class TransferQueue {
         TransferOptions(
             resume: transferSettings.resume,
             overwrite: overwrite,
-            checksum: nil,
+            checksum: transferSettings.verifyChecksums ? .sha256 : nil,
             chunkSize: transferSettings.chunkSize,
             maxConcurrentUploads: transferSettings.maxConcurrentUploads,
             maxConcurrentWrites: transferSettings.maxConcurrentWrites,
             maxConcurrentReads: transferSettings.maxConcurrentReads,
-            cancellation: cancellation
+            cancellation: cancellation,
+            verifyChecksum: transferSettings.verifyChecksums
         )
     }
 

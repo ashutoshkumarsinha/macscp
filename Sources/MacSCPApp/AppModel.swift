@@ -103,6 +103,7 @@ final class AppModel: TransferBackendProvider {
         if let settings = try? MacSCPConfiguration.loadSettings(
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser
         ) {
+            sessionCoordinator.applyTransferSettings(settings.transfer)
             transfers.applyTransferSettings(settings.transfer)
         }
 

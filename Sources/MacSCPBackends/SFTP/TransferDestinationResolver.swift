@@ -12,15 +12,15 @@ enum TransferDestinationResolver {
         policy: OverwritePolicy,
         remoteExists: (String) async -> Bool
     ) async -> String? {
-        let exists = await remoteExists(path)
-        guard exists else { return path }
-
         switch policy {
         case .overwrite, .prompt:
             return path
         case .skip:
-            return nil
+            let exists = await remoteExists(path)
+            return exists ? nil : path
         case .rename:
+            let exists = await remoteExists(path)
+            guard exists else { return path }
             for attempt in 1 ... 999 {
                 let candidate = TransferPathPlanner.renamedRemotePath(path, attempt: attempt)
                 if await !remoteExists(candidate) {

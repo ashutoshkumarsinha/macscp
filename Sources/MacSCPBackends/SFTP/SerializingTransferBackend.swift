@@ -84,17 +84,7 @@ public final class SerializingTransferBackend: CapableTransferBackend, @unchecke
         items: [BatchUploadItem],
         options: TransferOptions
     ) async throws -> [TransferResult] {
-        var results: [TransferResult] = []
-        results.reserveCapacity(items.count)
-        for item in items {
-            let result = try await gate.upload(
-                localURL: item.localURL,
-                remotePath: item.remotePath,
-                options: options
-            )
-            results.append(result)
-        }
-        return results
+        try await gate.uploadBatch(items: items, options: options)
     }
 }
 
@@ -163,5 +153,12 @@ private actor TransferBackendGate {
         options: TransferOptions
     ) async throws -> TransferResult {
         try await backend.download(remotePath: remotePath, localURL: localURL, options: options)
+    }
+
+    func uploadBatch(
+        items: [BatchUploadItem],
+        options: TransferOptions
+    ) async throws -> [TransferResult] {
+        try await backend.uploadBatch(items: items, options: options)
     }
 }

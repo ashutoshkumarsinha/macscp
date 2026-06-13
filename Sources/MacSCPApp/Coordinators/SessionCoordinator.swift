@@ -1,8 +1,7 @@
 // SessionCoordinator.swift — SSH/SFTP connect and disconnect lifecycle.
 //
 // Picks Citadel for key/password auth and Traversio for SSH agent auth.
-// Wraps the raw backend in SerializingTransferBackend so the transfer queue
-// can run concurrent jobs without racing on one SFTP connection.
+// Uses a connection pool when maxConcurrentTransfers > 1 for parallel jobs.
 
 import Foundation
 import MacSCPCore
@@ -21,10 +20,15 @@ final class SessionCoordinator {
 
     private(set) var backend: TransferBackend?
     private let connectionService = SessionConnectionService()
+    private var transferSettings = MacSCPTransferSettings()
 
     var onStatusMessage: ((String) -> Void)?
     var onConnected: (() async -> Void)?
     var onDisconnected: (() -> Void)?
+
+    func applyTransferSettings(_ settings: MacSCPTransferSettings) {
+        transferSettings = settings
+    }
 
     func connect(using draft: SessionProfileDraft) async {
         guard draft.validatePort() else {
@@ -47,10 +51,21 @@ final class SessionCoordinator {
         )
 
         do {
-            // Traversio has native ssh-agent support; Citadel is default for key files.
-            let backendKind: SFTPBackendKind = draft.authMethod == .agent ? .traversio : .citadel
-            let rawBackend = try TransferBackendFactory.make(for: .sftp, backend: backendKind, serialized: true)
-            try await connectionService.connect(backend: rawBackend, configuration: session)
+            let backendKind = selectBackendKind(for: draft.authMethod)
+            let rawBackend: TransferBackend
+            if transferSettings.maxConcurrentTransfers > 1 {
+                let pool = PooledTransferBackend(
+                    poolSize: transferSettings.maxConcurrentTransfers,
+                    backendKind: backendKind
+                )
+                try await connectionService.connect(backend: pool, configuration: session)
+                rawBackend = pool
+            } else {
+                let single = try TransferBackendFactory.make(for: .sftp, backend: backendKind, serialized: true)
+                try await connectionService.connect(backend: single, configuration: session)
+                rawBackend = single
+            }
+
             backend = rawBackend
             remotePath = session.initialRemotePath.isEmpty ? "/" : session.initialRemotePath
             activeSessionName = draft.name.isEmpty ? session.host : draft.name
@@ -75,5 +90,15 @@ final class SessionCoordinator {
         isConnected = false
         showLogin = true
         onStatusMessage?("Disconnected")
+    }
+
+    private func selectBackendKind(for authMethod: AuthMethod) -> SFTPBackendKind {
+        if authMethod == .agent {
+            return .traversio
+        }
+        if transferSettings.useTraversioForPerformance {
+            return .traversio
+        }
+        return .citadel
     }
 }

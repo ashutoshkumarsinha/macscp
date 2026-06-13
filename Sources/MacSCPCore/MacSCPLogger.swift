@@ -156,6 +156,14 @@ public final class MacSCPLogger: @unchecked Sendable {
         log(message, level: .error, category: category)
     }
 
+    /// Benchmark harness: suppress MacSCP file logging noise.
+    public func configureForBenchmarks() {
+        lock.lock()
+        defer { lock.unlock() }
+        isEnabled = false
+        minimumLevel = .warning
+    }
+
     public func error(_ error: Error, context: String, category: MacSCPLogCategory = .app) {
         log("\(context): \(error.localizedDescription)", level: .error, category: category)
     }

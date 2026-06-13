@@ -66,6 +66,8 @@ public struct TransferOptions: Sendable {
     public var maxConcurrentReads: Int
     /// When set, backends poll this during transfers for mid-flight cancel.
     public var cancellation: TransferCancellation?
+    /// When false, skip checksum computation even if `checksum` is set (faster transfers).
+    public var verifyChecksum: Bool
 
     public init(
         resume: Bool = false,
@@ -74,11 +76,12 @@ public struct TransferOptions: Sendable {
         checksum: ChecksumAlgorithm? = nil,
         progress: ProgressHandler? = nil,
         chunkSize: Int = 1024 * 1024,
-        maxConcurrentUploads: Int = 8,
-        smallFileThreshold: Int = 512 * 1024,
-        maxConcurrentWrites: Int = 8,
+        maxConcurrentUploads: Int = 12,
+        smallFileThreshold: Int = 256 * 1024,
+        maxConcurrentWrites: Int = 16,
         maxConcurrentReads: Int = 8,
-        cancellation: TransferCancellation? = nil
+        cancellation: TransferCancellation? = nil,
+        verifyChecksum: Bool = false
     ) {
         self.resume = resume
         self.overwrite = overwrite
@@ -91,6 +94,7 @@ public struct TransferOptions: Sendable {
         self.maxConcurrentWrites = maxConcurrentWrites
         self.maxConcurrentReads = maxConcurrentReads
         self.cancellation = cancellation
+        self.verifyChecksum = verifyChecksum
     }
 
     public func throwIfCancelled() throws {

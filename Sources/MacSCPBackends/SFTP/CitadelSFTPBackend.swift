@@ -253,7 +253,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         }
 
         var checksum: String?
-        if options.checksum == .sha256 {
+        if options.checksum == .sha256, options.verifyChecksum {
             checksum = Checksum.sha256(of: data)
         }
 
@@ -299,7 +299,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
                     readHandle: handle,
                     totalSize: totalSize,
                     startOffset: offset,
-                    maxConcurrentWrites: options.maxConcurrentWrites,
+                    chunkSize: chunkSize,
                     transferID: transferID,
                     remotePath: resolved,
                     progress: options.progress,
@@ -325,7 +325,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         try await file.close()
 
         var checksum: String?
-        if options.checksum == .sha256 {
+        if options.checksum == .sha256, options.verifyChecksum {
             checksum = try Checksum.sha256(of: localURL)
         }
 
@@ -391,9 +391,10 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
             try await ensureParentDirectoryCached(parent)
         }
 
+        let sortedItems = items.sorted { $0.remotePath < $1.remotePath }
         let concurrency = max(1, options.maxConcurrentUploads)
         return try await SFTPBatchUploadExecutor.uploadBatch(
-            items: items,
+            items: sortedItems,
             options: options,
             concurrency: concurrency
         ) { item, itemOptions in
@@ -507,7 +508,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         try await file.close()
 
         var checksum: String?
-        if options.checksum == .sha256 {
+        if options.checksum == .sha256, options.verifyChecksum {
             checksum = try Checksum.sha256(of: destination)
         }
 
@@ -554,6 +555,13 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
     private func ensureParentDirectoryCached(_ parent: String) async throws {
         guard parent != "/", !parent.isEmpty else { return }
         if directoryCache.contains(parent) { return }
+
+        let sftp = try requireSFTP()
+        if (try? await sftp.getAttributes(at: parent)) != nil {
+            directoryCache.insert(parent)
+            return
+        }
+
         try await createDirectory(at: parent, recursive: true)
         directoryCache.insert(parent)
     }

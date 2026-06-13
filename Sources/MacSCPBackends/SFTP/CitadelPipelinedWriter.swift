@@ -1,15 +1,13 @@
-// CitadelPipelinedWriter.swift — Overlapping SFTP WRITE requests for faster uploads.
+// CitadelPipelinedWriter.swift — Read-ahead local disk reads while writing SFTP chunks.
 
 import Citadel
 import Foundation
 import MacSCPCore
 import NIO
 
-/// Pipelines SFTP WRITE requests at distinct offsets so multiple round-trips overlap per handle.
+/// Overlaps reading the next local chunk with writing the current chunk to SFTP.
+/// Citadel SFTPFile does not support concurrent writes on one handle.
 enum CitadelPipelinedWriter {
-    /// Citadel splits each `write()` into ~32 KB SFTP packets; pipeline at that granularity.
-    static let sftpPacketSize = 32_000
-
     private final class WriteCoordinator: @unchecked Sendable {
         let file: SFTPFile
 
@@ -27,23 +25,20 @@ enum CitadelPipelinedWriter {
         readHandle: FileHandle,
         totalSize: Int,
         startOffset: UInt64,
-        maxConcurrentWrites: Int,
+        chunkSize: Int,
         transferID: UUID,
         remotePath: String,
         progress: ProgressHandler?,
         cancellation: TransferCancellation?
     ) async throws -> Int64 {
         let coordinator = WriteCoordinator(file: file)
-        let window = max(1, maxConcurrentWrites)
-        var readOffset = startOffset
-        var confirmedOffset = startOffset
-        var inFlight: [(offset: UInt64, length: Int, task: Task<Void, Error>)] = []
-        var inFlightHead = 0
+        let readChunkSize = max(chunkSize, 256 * 1024)
+        var offset = startOffset
+        var prefetch: Task<Data, Error>?
         let startTime = Date()
 
         func reportProgress() {
             guard let progress else { return }
-            let transferred = Int64(confirmedOffset)
             let elapsed = Date().timeIntervalSince(startTime)
             progress(
                 TransferProgress(
@@ -51,58 +46,58 @@ enum CitadelPipelinedWriter {
                     direction: .upload,
                     path: remotePath,
                     totalBytes: Int64(totalSize),
-                    transferredBytes: transferred,
+                    transferredBytes: Int64(offset),
                     bytesPerSecond: elapsed > 0
-                        ? Double(transferred - Int64(startOffset)) / elapsed : nil
+                        ? Double(offset - startOffset) / elapsed : nil
                 )
             )
         }
 
-        defer {
-            for index in inFlightHead ..< inFlight.count {
-                inFlight[index].task.cancel()
+        defer { prefetch?.cancel() }
+
+        while offset < UInt64(totalSize) {
+            if cancellation?.isCancelled == true || Task.isCancelled {
+                throw BackendError.cancelled
             }
-        }
+            try cancellation?.throwIfCancelled()
 
-        do {
-            while confirmedOffset < UInt64(totalSize) || inFlightHead < inFlight.count {
-                if cancellation?.isCancelled == true || Task.isCancelled {
-                    throw BackendError.cancelled
-                }
-                try cancellation?.throwIfCancelled()
-
-                while inFlight.count - inFlightHead < window, readOffset < UInt64(totalSize) {
-                    let remaining = totalSize - Int(readOffset)
-                    let chunkLength = min(sftpPacketSize, remaining)
-                    guard let chunk = try readHandle.read(upToCount: chunkLength), !chunk.isEmpty else {
-                        break
-                    }
-                    let writeOffset = readOffset
-                    let buffer = ByteBuffer(data: chunk)
-                    readOffset += UInt64(chunk.count)
-
-                    let writeTask = Task {
-                        try await coordinator.write(buffer, at: writeOffset)
-                    }
-                    inFlight.append((writeOffset, chunk.count, writeTask))
-                }
-
-                guard inFlightHead < inFlight.count else { break }
-
-                let next = inFlight[inFlightHead]
-                inFlightHead += 1
+            let data: Data
+            if let prefetch {
                 do {
-                    try await next.task.value
+                    data = try await prefetch.value
                 } catch is CancellationError {
                     throw BackendError.cancelled
                 }
-                confirmedOffset = next.offset + UInt64(next.length)
-                reportProgress()
+            } else {
+                let toRead = min(readChunkSize, totalSize - Int(offset))
+                guard let chunk = try readHandle.read(upToCount: toRead), !chunk.isEmpty else {
+                    break
+                }
+                data = chunk
             }
-        } catch {
-            throw error
+
+            if data.isEmpty { break }
+
+            let buffer = ByteBuffer(data: data)
+            try await coordinator.write(buffer, at: offset)
+            offset += UInt64(data.count)
+            reportProgress()
+
+            prefetch?.cancel()
+            if offset < UInt64(totalSize) {
+                let nextOffset = offset
+                let nextLength = min(readChunkSize, totalSize - Int(nextOffset))
+                prefetch = Task {
+                    guard let chunk = try readHandle.read(upToCount: nextLength), !chunk.isEmpty else {
+                        return Data()
+                    }
+                    return chunk
+                }
+            } else {
+                prefetch = nil
+            }
         }
 
-        return Int64(confirmedOffset - startOffset)
+        return Int64(offset - startOffset)
     }
 }

@@ -21,6 +21,12 @@ public struct MacSCPLoggingSettings: Sendable, Equatable {
     }
 }
 
+public enum TransferPerformancePreset: String, Sendable, Equatable {
+    case `default` = "default"
+    case lan = "lan"
+    case wan = "wan"
+}
+
 public struct MacSCPTransferSettings: Sendable, Equatable {
     public var maxConcurrentTransfers: Int
     public var maxConcurrentWrites: Int
@@ -28,14 +34,22 @@ public struct MacSCPTransferSettings: Sendable, Equatable {
     public var maxConcurrentUploads: Int
     public var chunkSize: Int
     public var resume: Bool
+    public var verifyChecksums: Bool
+    /// Applies tuned defaults for LAN or WAN; explicit keys in config.toml override preset values.
+    public var preset: TransferPerformancePreset
+    /// Use Traversio for key/password sessions when true (AGPL — see docs/user-guide.md).
+    public var useTraversioForPerformance: Bool
 
     public init(
         maxConcurrentTransfers: Int = 2,
-        maxConcurrentWrites: Int = 8,
+        maxConcurrentWrites: Int = 16,
         maxConcurrentReads: Int = 8,
-        maxConcurrentUploads: Int = 8,
+        maxConcurrentUploads: Int = 12,
         chunkSize: Int = 1_048_576,
-        resume: Bool = true
+        resume: Bool = true,
+        verifyChecksums: Bool = false,
+        preset: TransferPerformancePreset = .default,
+        useTraversioForPerformance: Bool = false
     ) {
         self.maxConcurrentTransfers = maxConcurrentTransfers
         self.maxConcurrentWrites = maxConcurrentWrites
@@ -43,6 +57,9 @@ public struct MacSCPTransferSettings: Sendable, Equatable {
         self.maxConcurrentUploads = maxConcurrentUploads
         self.chunkSize = chunkSize
         self.resume = resume
+        self.verifyChecksums = verifyChecksums
+        self.preset = preset
+        self.useTraversioForPerformance = useTraversioForPerformance
     }
 }
 
@@ -73,12 +90,15 @@ retention_days = 14
 mirror_stderr = false
 
 [transfer]
+preset = "default"
 max_concurrent_transfers = 2
-max_concurrent_writes = 8
+max_concurrent_writes = 16
 max_concurrent_reads = 8
-max_concurrent_uploads = 8
+max_concurrent_uploads = 12
 chunk_size = 1048576
 resume = true
+verify_checksums = false
+use_traversio_for_performance = false
 """
 
     public static func macscpDirectory(homeDirectory: URL) -> URL {
@@ -143,6 +163,27 @@ resume = true
         return settings
     }
 
+    static func applyPreset(_ preset: TransferPerformancePreset, to settings: inout MacSCPTransferSettings) {
+        switch preset {
+        case .default:
+            break
+        case .lan:
+            settings.maxConcurrentTransfers = 4
+            settings.maxConcurrentWrites = 32
+            settings.maxConcurrentReads = 16
+            settings.maxConcurrentUploads = 16
+            settings.chunkSize = 1_048_576
+            settings.verifyChecksums = false
+        case .wan:
+            settings.maxConcurrentTransfers = 1
+            settings.maxConcurrentWrites = 8
+            settings.maxConcurrentReads = 8
+            settings.maxConcurrentUploads = 4
+            settings.chunkSize = 262_144
+            settings.verifyChecksums = false
+        }
+    }
+
     static func parseLoggingSettings(from contents: String) -> MacSCPLoggingSettings {
         parseSettings(from: contents).logging
     }
@@ -184,6 +225,14 @@ resume = true
             settings.chunkSize = max(32_768, parseInt(value) ?? settings.chunkSize)
         case "resume":
             settings.resume = parseBool(value) ?? settings.resume
+        case "verify_checksums":
+            settings.verifyChecksums = parseBool(value) ?? settings.verifyChecksums
+        case "preset":
+            let parsed = TransferPerformancePreset(rawValue: unquote(value).lowercased()) ?? settings.preset
+            settings.preset = parsed
+            Self.applyPreset(parsed, to: &settings)
+        case "use_traversio_for_performance":
+            settings.useTraversioForPerformance = parseBool(value) ?? settings.useTraversioForPerformance
         default:
             break
         }
