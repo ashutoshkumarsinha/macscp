@@ -81,6 +81,9 @@ final class SlowMockTransferBackend: TransferBackend, @unchecked Sendable {
 final class CancellationMockTransferBackend: TransferBackend, @unchecked Sendable {
     let backendIdentifier = "mock-cancel"
     private(set) var isConnected = true
+    nonisolated(unsafe) private var uploadEnteredWait = false
+
+    var uploadEnteredWaitSignal: Bool { uploadEnteredWait }
 
     func connect(configuration: SessionConfiguration) async throws {}
     func disconnect() async throws { isConnected = false }
@@ -102,9 +105,11 @@ final class CancellationMockTransferBackend: TransferBackend, @unchecked Sendabl
         remotePath: String,
         options: TransferOptions
     ) async throws -> TransferResult {
-        try await Task.sleep(for: .milliseconds(50))
-        try options.throwIfCancelled()
-        return TransferResult(bytesTransferred: 1)
+        uploadEnteredWait = true
+        while true {
+            try options.throwIfCancelled()
+            try await Task.sleep(for: .milliseconds(10))
+        }
     }
 
     func download(
@@ -181,7 +186,7 @@ final class TransferQueueTests: XCTestCase {
     func testCancellationTokenStopsMockBackendUpload() async throws {
         let backend = CancellationMockTransferBackend()
         let cancellation = TransferCancellation()
-        var options = TransferOptions(cancellation: cancellation)
+        let options = TransferOptions(cancellation: cancellation)
 
         let uploadTask = Task {
             try await backend.upload(
@@ -191,7 +196,9 @@ final class TransferQueueTests: XCTestCase {
             )
         }
 
-        try await Task.sleep(for: .milliseconds(10))
+        try await waitUntil(timeout: 2) {
+            backend.uploadEnteredWaitSignal
+        }
         cancellation.cancel()
 
         do {
