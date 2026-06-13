@@ -15,6 +15,16 @@ An open-source, WinSCP-inspired file transfer client rebuilt from the ground up 
 | License | TBD (recommend MIT or Apache 2.0 for OSS adoption) |
 | Inspiration | [WinSCP](https://winscp.net/) — feature parity where sensible, macOS-native UX everywhere else |
 
+### Related Documents
+
+| Document | Path |
+|---|---|
+| Documentation index | [README.md](README.md) |
+| SFTP backend spike | [spikes/sftp-backend-spike.md](spikes/sftp-backend-spike.md) |
+| CLI reference | [cli-reference.md](cli-reference.md) |
+| Scripting guide | [scripting.md](scripting.md) |
+| TransferBackend protocol | [transfer-backend.md](transfer-backend.md) |
+
 ---
 
 ## Executive Summary

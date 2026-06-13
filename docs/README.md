@@ -1,10 +1,12 @@
 # MacSCP Documentation
 
-Design and implementation references for the MacSCP project. All documents align with [spec.md](../spec.md) v0.2.
+Design and implementation references for the MacSCP project. All documents align with [spec.md](spec.md) v0.2.
 
 | Document | Description |
 |---|---|
+| [Product Specification](spec.md) | PRD: features, architecture, roadmap |
 | [SFTP Backend Spike](spikes/sftp-backend-spike.md) | Evaluation of Swift SFTP/SSH libraries; recommended backend choice |
+| [Benchmark Results](../.benchmark/benchmark-results/report.json) | Latest `macscp-benchmark` JSON output (generated) |
 | [CLI Reference](cli-reference.md) | `macscp` command-line tool: commands, flags, exit codes, JSON output |
 | [Scripting Guide](scripting.md) | `.macscp` script format and WinSCP command mapping |
 | [TransferBackend Protocol](transfer-backend.md) | Shared abstraction all protocol backends implement |

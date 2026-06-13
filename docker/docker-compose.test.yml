@@ -1,0 +1,9 @@
+services:
+  sftp:
+    image: atmoz/sftp:debian
+    ports:
+      - "2222:22"
+    volumes:
+      - ./fixtures/upload:/home/bench/upload
+      - ./fixtures/keys/client_key.pub:/home/bench/.ssh/keys/client_key.pub:ro
+    command: bench:bench:1001:1001:upload
