@@ -1,4 +1,10 @@
-// SessionConnectionService.swift — Thin connect/disconnect wrapper around TransferBackend.
+// SessionConnectionService.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Thin connect/disconnect wrapper around TransferBackend. SessionCoordinator calls connect
+// then changeDirectory to the configured initial remote path after backend selection.
+//
 
 import Foundation
 import MacSCPCore

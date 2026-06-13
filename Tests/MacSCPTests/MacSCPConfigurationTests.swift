@@ -1,3 +1,9 @@
+// MacSCPConfigurationTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// MacSCPConfiguration TOML parsing for logging, transfer presets, and settings round-trip.
+//
 import Foundation
 @testable import MacSCPCore
 import XCTest

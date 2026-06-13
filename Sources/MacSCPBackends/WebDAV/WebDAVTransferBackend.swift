@@ -1,4 +1,10 @@
-// WebDAVTransferBackend.swift — HTTPS WebDAV (PROPFIND, GET, PUT, MKCOL, DELETE, MOVE).
+// WebDAVTransferBackend.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// HTTPS WebDAV backend (PROPFIND, GET, PUT, MKCOL, DELETE, MOVE). TransferBackendFactory
+// builds this for webdav:// sessions with resume and atomic rename capabilities.
+//
 
 import Foundation
 import MacSCPCore

@@ -1,4 +1,10 @@
-// FileOperationsCoordinator.swift — Rename, mkdir, delete, chmod on local and remote panes.
+// FileOperationsCoordinator.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Rename, mkdir, delete, and chmod on local and remote panes. AppModel and CommanderView
+// call these helpers when the user edits files or directories in either pane.
+//
 
 import Foundation
 import MacSCPCore

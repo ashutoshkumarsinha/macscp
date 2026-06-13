@@ -1,4 +1,10 @@
-// TerminalHandoff.swift — Open Terminal.app or iTerm2 with an SSH session.
+// TerminalHandoff.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Opens Terminal.app or iTerm2 with an SSH session for the active profile. CommanderView
+// toolbar invokes handoff when the user wants a shell alongside SFTP browsing.
+//
 
 import AppKit
 import Foundation

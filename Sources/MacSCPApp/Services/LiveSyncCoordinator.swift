@@ -1,4 +1,10 @@
-// LiveSyncCoordinator.swift — FSEvents watch on local folder → debounced upload queue.
+// LiveSyncCoordinator.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// FSEvents watch on a local folder drives a debounced upload queue. AppModel starts it when
+// live sync is enabled, delegating uploads to TransferCoordinator on file changes.
+//
 
 import CoreServices
 import Foundation

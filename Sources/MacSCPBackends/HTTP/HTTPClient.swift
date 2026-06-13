@@ -1,3 +1,10 @@
+// HTTPClient.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Thin async wrapper around URLSession for WebDAV and object-storage HTTP calls.
+// S3 and WebDAV backends use data(for:) and upload helpers with shared timeout handling.
+//
 import Foundation
 import MacSCPCore
 

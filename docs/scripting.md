@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.1 (draft) |
+| Version | 0.3 |
 | Related | [cli-reference.md](cli-reference.md), [spec.md §4.2](spec.md) |
 
 MacSCP scripts (`.macscp`) are line-oriented command files for automated transfers. They mirror [WinSCP scripting](https://winscp.net/eng/docs/scripting) closely enough that many existing WinSCP scripts can be adapted with minimal edits.
@@ -33,7 +33,7 @@ exit
 | Commands | One command per line; args space-separated |
 | Quoting | Use double quotes for paths with spaces |
 | Exit | Script ends at `exit` or EOF |
-| Errors | Non-zero exit unless `option continue on` (Phase 2) |
+| Errors | Non-zero exit unless `option continue on` |
 
 Run:
 
@@ -134,14 +134,15 @@ open ftps://user@host -explicit -passive=on
 | `option batch on` | `option batch on` |
 | `synchronize remote local` | `sync local remote -mirror -direction=remote` |
 | `synchronize local remote` | `sync local remote -mirror` |
-| `keepuptodate` | _Phase 2: `watch` command_ |
+| `keepuptodate` | GUI **Live Sync** (FSEvents); no CLI `watch` yet |
 
 ### Commands not supported (v1)
 
 | WinSCP | MacSCP alternative |
 |---|---|
 | `call ls` | Use `ls` |
-| `.NET assembly` | Import `MacSCPCore` Swift package (Phase 3) |
+| `.NET assembly` | Import `MacSCPCore` Swift package as a library |
+| `ProxyJump` / `-rawsettings` | `open ... --rawsettings ProxyJump=bastion` or `~/.ssh/config` merge |
 | `open ftpes://` | Use `ftps://` with `-explicit` |
 | `open s3://` | `open s3://ACCESS:SECRET@/bucket/prefix` or saved S3 profile |
 
@@ -208,12 +209,14 @@ exit
 
 Default: first failing command aborts script with that command's exit code.
 
-Phase 2 planned (now shipped for `continue` / `failonnomatch`):
+Supported script options:
 
 ```text
 option continue on          # log errors, continue
 option failonnomatch on     # globs must match at least one file
 ```
+
+Bidirectional sync from CLI: `macscp sync --bidirectional` (see [cli-reference.md](cli-reference.md)).
 
 Log failed transfers to stderr; use `--logfile` for audit trail.
 

@@ -1,4 +1,10 @@
-// TransferNotificationService.swift — Optional Notification Center alert when the transfer queue finishes.
+// TransferNotificationService.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Optional Notification Center alert when the transfer queue finishes. AppModel requests
+// authorization and notifies with failed/completed counts after the queue drains.
+//
 
 import Foundation
 import UserNotifications

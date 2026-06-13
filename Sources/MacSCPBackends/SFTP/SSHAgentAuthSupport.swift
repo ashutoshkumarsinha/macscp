@@ -1,7 +1,10 @@
-// SSHAgentAuthSupport.swift — ssh-agent authentication via Traversio SSHAgentClient.
+// SSHAgentAuthSupport.swift
 //
-// Reads identities from SSH_AUTH_SOCK and returns a Traversio auth method.
-// Citadel does not support agent auth directly; SessionCoordinator picks Traversio.
+// WHAT THIS FILE DOES
+// -------------------
+// ssh-agent authentication via Traversio SSHAgentClient. Reads identities from SSH_AUTH_SOCK;
+// SFTPBackendSelector picks Traversio when auth method is agent because Citadel lacks agent support.
+//
 
 import Foundation
 import MacSCPCore

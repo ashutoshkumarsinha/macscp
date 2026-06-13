@@ -1,3 +1,10 @@
+// SessionConfigurationBuilder.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Factory for SessionConfiguration from protocol, host, credentials, and remote path.
+// App connect UI, CLIActions, and tests use make to assemble a ready-to-connect session.
+//
 import Foundation
 
 public enum SessionConfigurationBuilder {

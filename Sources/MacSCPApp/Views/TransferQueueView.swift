@@ -1,3 +1,10 @@
+// TransferQueueView.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// SwiftUI panel showing queued, running, and completed transfer jobs.
+// Binds to AppModel.transferQueue and exposes pause, resume, and cancel actions.
+//
 import SwiftUI
 import MacSCPUI
 

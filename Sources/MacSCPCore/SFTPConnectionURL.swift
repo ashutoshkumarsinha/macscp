@@ -1,3 +1,10 @@
+// SFTPConnectionURL.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Parses and formats sftp:// URLs with host, port, credentials, key path, and remote path.
+// ConnectionURL and direct CLI URL parsing delegate SFTP and SCP schemes here.
+//
 import Foundation
 
 public struct SFTPConnectionURL: Sendable, Equatable {

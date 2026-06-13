@@ -2,8 +2,14 @@
 #
 # Usage:
 #   make              # show targets
-#   make build test   # compile and run tests (88 XCTest + 3 Swift Testing)
+#   make build test   # compile and run tests (138 tests)
 #   make run          # launch MacSCP (starts local SFTP fixture first)
+#
+# Related: scripts/benchmark-env.sh, scripts/ci-local.sh, docs/user-guide.md
+#
+# Sections: Variables | Build | Test | Server | Benchmark | Packaging | Utilities
+
+# --- Variables ---
 
 SWIFT       ?= swift
 ROOT        := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -22,6 +28,8 @@ LOG_DIR     := $(HOME)/.macscp/logs
 
 .DEFAULT_GOAL := help
 
+# --- Build ---
+
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_.-]+:.*##' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -32,28 +40,27 @@ build: ## Build all targets (debug)
 build-release: ## Build optimized release binaries
 	$(SWIFT) build -c release
 
-test: build ## Run unit tests (88 XCTest + 3 Swift Testing)
-	$(SWIFT) test
-
-check: build test ## Build + test (CI-friendly)
-
 cli: build ## Build macscp CLI (product macscp-cli; see docs/cli-reference.md)
 	$(SWIFT) build --product macscp-cli
 
 macscp: cli ## Run macscp CLI via scripts/macscp (builds first)
 	$(SCRIPTS)/macscp $(ARGS)
 
-package-cli: build-release ## Install macscp CLI to /usr/local/bin (requires sudo)
-	install -m 755 .build/release/macscp-cli /usr/local/bin/macscp
-
-ci: check bench-verify ## Local CI: tests + Apple Silicon benchmarks + pass-criteria check
-
 clean: ## Remove build artifacts
 	$(SWIFT) package clean
 	rm -rf .build
 
-run: server-start ## Run MacSCP app (starts local SFTP on :2222)
-	$(SWIFT) run MacSCP
+# --- Test ---
+
+test: build ## Run unit tests (138 tests)
+	$(SWIFT) test
+
+check: build test ## Build + test (CI-friendly)
+
+ci: check bench-verify ## Local CI: tests + Apple Silicon benchmarks + pass-criteria check
+
+# --- Server ---
+# Local OpenSSH SFTP fixture on port 2222 for dev and benchmarks (see scripts/benchmark-env.sh).
 
 server-start: ## Start local OpenSSH SFTP test server (port 2222)
 	$(BENCH_ENV) start
@@ -66,6 +73,12 @@ server-restart: ## Restart local SFTP test server
 
 server-status: ## Check whether local SFTP test server is listening
 	$(BENCH_ENV) status
+
+run: server-start ## Run MacSCP app (starts local SFTP on :2222)
+	$(SWIFT) run MacSCP
+
+# --- Benchmark ---
+# Reports land in .benchmark/benchmark-results/; verify with bench-verify or verify-benchmark-report.sh.
 
 bench: server-start ## Run SFTP benchmark suite (quick mode)
 	$(RUN_BENCH)
@@ -85,11 +98,18 @@ bench-verify: bench-apple-silicon ## Run bench-apple-silicon and verify passCrit
 bench-profile: server-start ## Sweep upload concurrency settings
 	$(SWIFT) run macscp-benchmark profile-upload
 
+# --- Packaging ---
+
 icon: ## Generate AppIcon.icns and populate Xcode asset catalog
 	$(SCRIPTS)/generate-app-icon.sh
 
 package-dmg: ## Build signed .app bundle and dist/MacSCP-<version>.dmg
 	$(SCRIPTS)/package-dmg.sh
+
+package-cli: build-release ## Install macscp CLI to /usr/local/bin (requires sudo)
+	install -m 755 .build/release/macscp-cli /usr/local/bin/macscp
+
+# --- Utilities ---
 
 logs: ## Tail today's MacSCP log file (~/.macscp/logs)
 	@mkdir -p "$(LOG_DIR)"

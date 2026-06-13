@@ -2,8 +2,18 @@
 # Generate macOS App Icon sizes for Assets.xcassets and AppIcon.icns from the master PNG.
 # Crops non-square masters to a center square, then writes all required slots.
 #
-# Used by: make icon
-# See: docs/packaging.md
+# Used by: make icon, scripts/package-dmg.sh
+#
+# Usage:
+#   ./scripts/generate-app-icon.sh
+#   MACSCP_ICON_MASTER=/path/to/icon.png ./scripts/generate-app-icon.sh
+#
+# Output:
+#   packaging/MacSCP.xcassets/AppIcon.appiconset/  (all @1x/@2x slots)
+#   build/AppIcon.icns
+#   Resources/AppIcon/MacSCP-AppIcon-1024.png      (normalized square master)
+#
+# Related: docs/packaging.md
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -21,6 +31,8 @@ fi
 mkdir -p "${ICONSET}" "${WORK_DIR}" "${WORK_ICONSET}" "$(dirname "${ICNS_OUT}")"
 rm -f "${WORK_ICONSET}"/*
 
+# --- Normalize master to square 1024×1024 ---
+
 SQUARE="${WORK_DIR}/master-square.png"
 cp "${MASTER}" "${SQUARE}"
 
@@ -36,6 +48,8 @@ fi
 
 sips -z 1024 1024 "${SQUARE}" --out "${ICONSET}/AppIcon-1024.png" >/dev/null
 cp "${ICONSET}/AppIcon-1024.png" "${ROOT}/Resources/AppIcon/MacSCP-AppIcon-1024.png"
+
+# --- Generate iconset slots and .icns ---
 
 echo "Generating App Icon sizes in ${ICONSET} …"
 

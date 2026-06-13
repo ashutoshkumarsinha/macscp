@@ -1,6 +1,10 @@
-// SessionProfile.swift — Saved connection profiles (JSON) and ProfileStore persistence.
+// SessionProfile.swift
 //
-// Passwords are stored in Keychain; profiles.json holds host, user, auth method, key path.
+// WHAT THIS FILE DOES
+// -------------------
+// Saved connection profiles (JSON) and ProfileStore persistence. Passwords live in Keychain;
+// profiles.json holds host, user, auth method, and key path for ProfileCoordinator.
+//
 
 import Foundation
 import MacSCPCore

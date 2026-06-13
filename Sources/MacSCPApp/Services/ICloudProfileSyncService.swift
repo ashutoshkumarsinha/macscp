@@ -1,4 +1,10 @@
-// ICloudProfileSyncService.swift — Opt-in encrypted profile sync via iCloud Drive.
+// ICloudProfileSyncService.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Opt-in encrypted profile sync via iCloud Drive. ProfileCoordinator calls syncIfEnabled
+// after saves; profiles.enc and a Keychain sync key protect credentials off-device.
+//
 
 import CryptoKit
 import Foundation

@@ -1,4 +1,10 @@
-// MacSCPHostKeySupport.swift — Trust-on-first-use host key store for SSH connections.
+// MacSCPHostKeySupport.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Trust-on-first-use host key store for SSH connections at ~/.macscp/known_hosts.json.
+// CitadelSFTPBackend and Traversio backends consult MacSCPHostKeyTrustStore and HostKeyTrustGate.
+//
 
 import Citadel
 import Crypto

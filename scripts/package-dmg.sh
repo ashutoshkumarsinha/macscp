@@ -12,10 +12,14 @@
 # Output:
 #   build/MacSCP.app
 #   dist/MacSCP-<version>.dmg
+#
+# Related: scripts/generate-app-icon.sh, scripts/build-finder-sync.sh, packaging/
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${ROOT}"
+
+# --- Configuration ---
 
 APP_NAME="MacSCP"
 BUNDLE_ID="${MACSCP_BUNDLE_ID:-com.macscp.app}"
@@ -29,6 +33,8 @@ APP_DIR="${BUILD_DIR}/${APP_NAME}.app"
 DIST_DIR="${ROOT}/dist"
 DMG_NAME="${APP_NAME}-${SHORT_VERSION}.dmg"
 DMG_PATH="${DIST_DIR}/${DMG_NAME}"
+
+# --- Build release binaries ---
 
 echo "==> Building release binaries"
 swift build -c release --product "${APP_NAME}"
@@ -52,6 +58,8 @@ if [[ ! -x "${CLI_BIN}" ]]; then
   exit 1
 fi
 
+# --- App icon and bundle assembly ---
+
 echo "==> Generating App Icon (.icns + asset catalog)"
 "${ROOT}/scripts/generate-app-icon.sh"
 ICNS="${BUILD_DIR}/AppIcon.icns"
@@ -66,6 +74,7 @@ cp "${CLI_BIN}" "${APP_DIR}/Contents/MacOS/macscp"
 chmod +x "${APP_DIR}/Contents/MacOS/${APP_NAME}" "${APP_DIR}/Contents/MacOS/macscp"
 cp "${ICNS}" "${APP_DIR}/Contents/Resources/AppIcon.icns"
 
+# actool is optional; CFBundleIconFile + AppIcon.icns suffice when it is unavailable.
 if command -v xcrun >/dev/null 2>&1 && xcrun actool --help >/dev/null 2>&1; then
   echo "==> Compiling asset catalog (optional Assets.car)"
   ACTOOL_OUT="${BUILD_DIR}/actool"
@@ -95,6 +104,8 @@ cp "${INFO_PLIST}" "${APP_DIR}/Contents/Info.plist"
 cp "${ROOT}/packaging/MacSCP.sdef" "${APP_DIR}/Contents/Resources/MacSCP.sdef"
 cp "${ROOT}/NOTICE" "${APP_DIR}/Contents/Resources/NOTICE"
 
+# --- Finder Sync extension ---
+
 if [[ -x "${ROOT}/scripts/build-finder-sync.sh" ]]; then
   echo "==> Building Finder Sync extension"
   MACSCP_SHORT_VERSION="${SHORT_VERSION}" MACSCP_BUILD_VERSION="${BUILD_VERSION}" \
@@ -102,6 +113,8 @@ if [[ -x "${ROOT}/scripts/build-finder-sync.sh" ]]; then
   mkdir -p "${APP_DIR}/Contents/PlugIns"
   cp -R "${BUILD_DIR}/MacSCPFinderSync.appex" "${APP_DIR}/Contents/PlugIns/"
 fi
+
+# --- Code signing ---
 
 if [[ "${SKIP_SIGN}" != "1" ]]; then
   ENTITLEMENTS="${ROOT}/packaging/MacSCP.entitlements"
@@ -128,6 +141,8 @@ if [[ "${SKIP_SIGN}" != "1" ]]; then
 else
   echo "==> Skipping code sign (MACSCP_SKIP_SIGN=1)"
 fi
+
+# --- DMG creation ---
 
 echo "==> Creating DMG"
 rm -rf "${DIST_DIR}"

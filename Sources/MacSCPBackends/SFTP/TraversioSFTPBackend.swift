@@ -1,6 +1,10 @@
-// TraversioSFTPBackend.swift — Alternate SFTP backend (libssh2 via Traversio).
+// TraversioSFTPBackend.swift
 //
-// Selected for SSH agent auth. Also used in macscp-benchmark comparisons.
+// WHAT THIS FILE DOES
+// -------------------
+// Alternate SFTP backend (libssh2 via Traversio) for SSH agent auth and benchmark comparisons.
+// SFTPBackendSelector routes agent sessions here; shares listing cache and upload helpers with Citadel.
+//
 
 import Foundation
 import MacSCPCore
@@ -29,7 +33,7 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
             try await disconnect()
         }
 
-        let sshConfig = try await makeConfiguration(from: configuration)
+        let sshConfig = try await TraversioSSHConfigurationBuilder.makeConfiguration(from: configuration)
         let connection = try await SSHClient.connect(configuration: sshConfig)
         let sftp = try await connection.openSFTP()
 
@@ -292,66 +296,6 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
     }
 
     // MARK: - Private
-
-    private func makeConfiguration(from configuration: SessionConfiguration) async throws -> SSHClientConfiguration {
-        let auth: SSHAuthenticationMethod
-        switch configuration.authMethod {
-        case .password, .interactive:
-            guard let password = configuration.password else {
-                throw BackendError.authenticationFailed("Password required")
-            }
-            auth = .password(password)
-        case .publicKey:
-            guard let keyPath = configuration.keyPath else {
-                throw BackendError.authenticationFailed("Key path required")
-            }
-            let expanded = NSString(string: keyPath).expandingTildeInPath
-            auth = try SSHAuthenticationMethod.openSSHPrivateKey(
-                contentsOfFile: expanded,
-                passphrase: configuration.keyPassphrase
-            )
-        case .agent:
-            auth = try await SSHAgentAuthSupport.traversioAuthentication()
-        }
-
-        return SSHClientConfiguration(
-            host: configuration.host,
-            port: UInt16(clamping: configuration.port),
-            username: configuration.username,
-            authentication: auth,
-            hostKeyPolicy: makeHostKeyPolicy(for: configuration)
-        )
-    }
-
-    private func makeHostKeyPolicy(for configuration: SessionConfiguration) -> SSHHostKeyPolicy {
-        let endpoint = MacSCPHostKeyTrustStore.endpointKey(
-            host: configuration.host,
-            port: configuration.port
-        )
-        let expected = configuration.advanced.hostKeyFingerprint.map(MacSCPHostKeyTrustStore.normalizeFingerprint)
-
-        if let expected, !expected.isEmpty {
-            return .callback { request in
-                let received = MacSCPHostKeyTrustStore.normalizeFingerprint(
-                    request.trustedHostKey.fingerprintSHA256
-                )
-                if received == expected {
-                    return .callback
-                }
-                throw BackendError.hostKeyRejected(expected: expected, actual: received)
-            }
-        }
-
-        return .callback { request in
-            let received = request.trustedHostKey.fingerprintSHA256
-            try MacSCPHostKeyTrustStore.validateTOFU(
-                endpoint: endpoint,
-                receivedFingerprint: received,
-                expectedFingerprint: nil
-            )
-            return .callback
-        }
-    }
 
     private func ensureParentDirectoryCached(_ parent: String) async throws {
         guard !parent.isEmpty, parent != "/" else { return }

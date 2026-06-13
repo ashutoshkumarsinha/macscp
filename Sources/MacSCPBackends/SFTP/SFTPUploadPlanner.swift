@@ -1,4 +1,10 @@
-// SFTPUploadPlanner.swift — Shared upload prep helpers (parent path, file size).
+// SFTPUploadPlanner.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Shared upload prep helpers (parent path, local file size). CitadelSFTPBackend and TraversioSFTPBackend
+// ensure parent directories exist and size files before starting uploads.
+//
 
 import Foundation
 

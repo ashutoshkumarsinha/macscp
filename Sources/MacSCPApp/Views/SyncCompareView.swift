@@ -1,3 +1,10 @@
+// SyncCompareView.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Sheet listing directory compare results and sync direction controls.
+// SyncCoordinator populates compareRows; this view enqueues mirror or bidirectional sync.
+//
 import MacSCPCore
 import SwiftUI
 

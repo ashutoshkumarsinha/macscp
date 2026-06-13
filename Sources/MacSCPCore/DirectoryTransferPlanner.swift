@@ -1,6 +1,10 @@
-// DirectoryTransferPlanner.swift — Expand directory trees into flat upload/download job lists.
+// DirectoryTransferPlanner.swift
 //
-// Used by TransferCoordinator before enqueueing. Symlinks are skipped on download.
+// WHAT THIS FILE DOES
+// -------------------
+// Expands directory trees into flat upload/download job lists. TransferCoordinator calls this
+// before enqueueing; symlinks are skipped on download walks.
+//
 
 import Foundation
 

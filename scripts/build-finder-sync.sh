@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
 # Build the MacSCP Finder Sync extension (.appex) for embedding in MacSCP.app.
+#
+# Compiles FinderSync.swift with swiftc and assembles a minimal .appex bundle.
+# Used by: scripts/package-dmg.sh
+#
+# Usage:
+#   ./scripts/build-finder-sync.sh
+#   MACSCP_SHORT_VERSION=0.4.0 MACSCP_BUILD_VERSION=42 ./scripts/build-finder-sync.sh
+#
+# Output:
+#   build/MacSCPFinderSync.appex
+#
+# Related: Extensions/MacSCPFinderSync/, docs/packaging.md
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -10,6 +22,8 @@ SHORT_VERSION="${MACSCP_SHORT_VERSION:-0.3.0}"
 BUILD_VERSION="${MACSCP_BUILD_VERSION:-${SHORT_VERSION}}"
 ARCH="$(uname -m)"
 TARGET="${ARCH}-apple-macos15.0"
+
+# --- Compile extension binary ---
 
 echo "==> Building Finder Sync extension"
 rm -rf "${APPEX}"
@@ -25,6 +39,8 @@ swiftc \
   "${EXT_DIR}/FinderSync.swift" \
   -framework FinderSync \
   -framework Cocoa
+
+# --- Bundle Info.plist ---
 
 INFO_PLIST="${BUILD_DIR}/FinderSync-Info.plist"
 sed \

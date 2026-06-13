@@ -1,3 +1,10 @@
+// FTPConnectionURL.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Parses and formats ftp:// and ftps:// URLs including implicit TLS flag.
+// ConnectionURL delegates FTP scheme parsing here before building SessionConfiguration.
+//
 import Foundation
 
 public struct FTPConnectionURL: Sendable, Equatable {

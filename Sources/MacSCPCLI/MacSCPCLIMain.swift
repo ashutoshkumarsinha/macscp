@@ -1,3 +1,10 @@
+// MacSCPCLIMain.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// @main ArgumentParser entry for the scriptable macscp command-line client.
+// Defines Open, Close, Ls, Get, Put, Sync, and Script subcommands wired to CLIActions.
+//
 import ArgumentParser
 import Foundation
 
@@ -29,13 +36,17 @@ extension MacSCPCLICommand {
         @Flag(name: .long, help: "Batch mode (strict host keys).")
         var batch = false
 
+        @Option(name: .customLong("rawsettings"), parsing: .upToNextOption, help: "OpenSSH-style settings (ProxyJump=host).")
+        var rawSettings: [String] = []
+
         mutating func run() async throws {
             try await CLIActions.open(
                 url: url,
                 password: password,
                 agent: agent,
                 hostkey: hostkey,
-                batch: batch
+                batch: batch,
+                rawSettings: rawSettings
             )
         }
     }

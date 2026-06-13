@@ -1,3 +1,10 @@
+// OverwritePromptView.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// SwiftUI sheet for resolving overwrite conflicts before queued transfers run.
+// AppModel shows this when TransferQueue collects a PendingTransferBatch.
+//
 import SwiftUI
 import MacSCPUI
 

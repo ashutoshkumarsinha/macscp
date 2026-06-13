@@ -1,4 +1,10 @@
-// CommanderView.swift — Dual-pane file browser, toolbar transfers, drag-and-drop.
+// CommanderView.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Dual-pane file browser with toolbar transfers and drag-and-drop. Binds to AppModel for
+// local/remote listings, transfer queue status, and file operation actions.
+//
 
 import SwiftUI
 import AppKit

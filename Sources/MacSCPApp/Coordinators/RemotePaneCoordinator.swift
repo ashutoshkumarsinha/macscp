@@ -1,4 +1,10 @@
-// RemotePaneCoordinator.swift — Remote SFTP listing and path navigation.
+// RemotePaneCoordinator.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Remote SFTP listing and path navigation. AppModel refreshes remoteEntries via the
+// connected TransferBackend when the user browses the remote pane.
+//
 
 import Foundation
 import MacSCPCore

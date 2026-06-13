@@ -1,3 +1,10 @@
+// BenchmarkRunner.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Runs the full transfer benchmark suite and assembles a BenchmarkReport.
+// MacSCPBenchmarkMain invokes runAll for large files, small files, list, resume, and auth tests.
+//
 import Foundation
 import MacSCPCore
 import MacSCPBackends

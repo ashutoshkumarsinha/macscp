@@ -1,4 +1,10 @@
-// InternalEditorView.swift — In-app text editor for remote files (download → edit → upload).
+// InternalEditorView.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// In-app text editor for remote files (download → edit → upload). Presented from CommanderView
+// with bindings to InternalEditorService state, encoding, and save handlers.
+//
 
 import SwiftUI
 

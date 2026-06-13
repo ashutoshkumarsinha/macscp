@@ -1,3 +1,10 @@
+// OpenSSHBaseline.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Measures OpenSSH sftp/scp baseline upload and download speeds for comparison.
+// BenchmarkRunner calls OpenSSHSFTPBaseline to record native client timings in reports.
+//
 import Foundation
 import MacSCPCore
 

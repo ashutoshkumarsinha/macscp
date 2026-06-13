@@ -1,4 +1,10 @@
-// SFTPAttributeMapping.swift — Shared SFTP file mode → EntryType mapping.
+// SFTPAttributeMapping.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Shared SFTP file mode → EntryType mapping from Unix permission bits. Citadel and Traversio
+// backends call entryType(fromPermissions:) when building RemoteEntry rows from SFTP attrs.
+//
 
 import Foundation
 

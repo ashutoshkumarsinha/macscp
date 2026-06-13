@@ -2,18 +2,9 @@
 //
 // WHAT THIS FILE DOES
 // -------------------
-// Computes SHA-256 while file bytes are being read for upload, instead of reading
-// the whole file twice (once for transfer, once for checksum).
+// Computes SHA-256 while file bytes stream during upload instead of reading the file twice.
+// CitadelSFTPBackend and CitadelPipelinedWriter call update/finalizeHex when verify_checksums is on.
 //
-// WHO USES IT
-// -----------
-// CitadelSFTPBackend large uploads and CitadelPipelinedWriter when verify_checksums
-// is enabled in config.toml.
-//
-// BEGINNER TIP
-// ------------
-// Call update() for each chunk, then finalizeHex() once at the end. The hex string
-// matches what Checksum.sha256(of:) would produce for the full file.
 
 import Crypto
 import Foundation

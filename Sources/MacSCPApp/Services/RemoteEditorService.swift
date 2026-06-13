@@ -1,4 +1,10 @@
-// RemoteEditorService.swift — Download remote file, open in external editor, re-upload on save.
+// RemoteEditorService.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Downloads a remote file, opens it in an external editor, and re-uploads on save. CommanderView
+// uses DispatchSource file watchers to detect when the edited local copy changes.
+//
 
 import AppKit
 import Foundation

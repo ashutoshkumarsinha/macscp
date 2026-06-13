@@ -1,5 +1,10 @@
-// TransferBackend.swift — Protocol (contract) every file-transfer backend must implement.
-// UI and CLI depend on this interface, not on Citadel or Traversio directly.
+// TransferBackend.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Protocol contract every file-transfer backend must implement. UI, CLI, and TransferQueue depend
+// on this interface rather than Citadel or Traversio directly; BackendCapabilities flag optional features.
+//
 
 import Foundation
 

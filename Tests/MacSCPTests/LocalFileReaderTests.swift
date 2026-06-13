@@ -1,3 +1,9 @@
+// LocalFileReaderTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// LocalFileReader streaming reads for small and large files via FileHandle and mmap.
+//
 @testable import MacSCPBackends
 import XCTest
 

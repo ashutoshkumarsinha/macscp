@@ -1,3 +1,10 @@
+// BenchmarkConfig.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Command-line configuration for MacSCP benchmark runs against a remote host.
+// Parsed by the benchmark CLI and passed to BenchmarkRunner and spike runners.
+//
 import Foundation
 import MacSCPCore
 

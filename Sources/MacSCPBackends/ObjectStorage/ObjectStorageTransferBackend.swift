@@ -1,4 +1,10 @@
-// ObjectStorageTransferBackend.swift — Amazon S3 and GCS (S3-compatible HMAC) object storage.
+// ObjectStorageTransferBackend.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Amazon S3 and GCS (S3-compatible HMAC) object storage backend. TransferBackendFactory
+// builds this for s3:// URLs; supports multipart resume via S3MultipartUpload helpers.
+//
 
 import Foundation
 import MacSCPCore

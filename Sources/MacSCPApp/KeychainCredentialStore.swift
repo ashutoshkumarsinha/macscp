@@ -1,4 +1,10 @@
-// KeychainCredentialStore.swift — Profile passwords in macOS Keychain (not profiles.json).
+// KeychainCredentialStore.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Stores profile passwords and key passphrases in macOS Keychain (not profiles.json).
+// ProfileCoordinator and SessionProfile persistence read and write secrets via this helper.
+//
 
 import Foundation
 import Security

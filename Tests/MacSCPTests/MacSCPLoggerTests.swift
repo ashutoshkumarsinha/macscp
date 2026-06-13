@@ -1,3 +1,9 @@
+// MacSCPLoggerTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// MacSCPLogger bootstrap, log directory creation, rotation, and level filtering.
+//
 import Foundation
 @testable import MacSCPCore
 import XCTest

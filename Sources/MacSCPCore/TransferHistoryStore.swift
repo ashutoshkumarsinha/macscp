@@ -1,3 +1,10 @@
+// TransferHistoryStore.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Appends and loads completed transfer records to a JSON file under ~/.config/macscp.
+// TransferCoordinator records entries when MacSCPFeatureSettings.transferHistoryEnabled is on.
+//
 import Foundation
 
 public struct TransferHistoryEntry: Codable, Sendable, Equatable, Identifiable {

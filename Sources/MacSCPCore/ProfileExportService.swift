@@ -1,3 +1,10 @@
+// ProfileExportService.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Encrypts and decrypts exported session profile JSON with AES-GCM and a user password.
+// Settings export and import flows call exportEncryptedJSON and importEncryptedJSON.
+//
 import CryptoKit
 import Foundation
 

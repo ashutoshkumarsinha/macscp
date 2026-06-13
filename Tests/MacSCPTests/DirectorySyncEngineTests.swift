@@ -1,3 +1,9 @@
+// DirectorySyncEngineTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// DirectorySyncEngine row filtering for upload, download, and bidirectional sync plans.
+//
 import MacSCPCore
 import XCTest
 

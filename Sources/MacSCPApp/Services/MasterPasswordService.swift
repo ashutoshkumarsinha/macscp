@@ -1,3 +1,10 @@
+// MasterPasswordService.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Stores and verifies an optional app master password in the Keychain.
+// Settings and profile export flows call setMasterPassword, verify, and clear.
+//
 import CryptoKit
 import Foundation
 import Security

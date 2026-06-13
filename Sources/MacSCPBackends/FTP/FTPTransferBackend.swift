@@ -1,4 +1,10 @@
-// FTPTransferBackend.swift — Plain FTP and FTPS (implicit + explicit AUTH TLS).
+// FTPTransferBackend.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Plain FTP and FTPS (implicit + explicit AUTH TLS) TransferBackend implementation.
+// TransferBackendFactory routes FTP/FTPS sessions here; uses FTPListingParser and FTPStreamChannel.
+//
 
 import Foundation
 import MacSCPCore

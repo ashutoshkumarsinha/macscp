@@ -1,3 +1,9 @@
+// TransferCancellationTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// TransferCancellation flag lifecycle and throwIfCancelled integration with TransferOptions.
+//
 import MacSCPCore
 import XCTest
 

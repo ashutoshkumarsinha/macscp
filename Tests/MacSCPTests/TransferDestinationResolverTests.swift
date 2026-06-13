@@ -1,3 +1,9 @@
+// TransferDestinationResolverTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// TransferDestinationResolver path resolution for overwrite, skip, and rename policies.
+//
 @testable import MacSCPBackends
 import MacSCPCore
 import XCTest

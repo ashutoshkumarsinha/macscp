@@ -1,3 +1,9 @@
+// ConnectionURLTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// ConnectionURL.parse for sftp, scp, ftp, and ftps schemes including ports and paths.
+//
 import MacSCPCore
 @testable import MacSCPBackends
 import XCTest

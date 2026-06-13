@@ -1,3 +1,10 @@
+// SFTPErrorHelpers.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Classifies SFTP errors from Citadel and Traversio into common conditions.
+// Backends call isAlreadyExists when mkdir fails because a path already exists.
+//
 import Foundation
 
 enum SFTPErrorHelpers {

@@ -1,3 +1,10 @@
+// SyncCoordinator.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Compares local and remote directories and enqueues sync transfers.
+// SyncCoordinator drives SyncCompareView and calls DirectorySyncEngine plus TransferCoordinator.
+//
 import Foundation
 import MacSCPCore
 

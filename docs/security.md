@@ -11,7 +11,8 @@ Security posture for v0.3 developer preview and the path to Mac App Store distri
 | **App Sandbox** | **Not enabled** for direct/Homebrew distribution. Full sandbox deferred to the Mac App Store track (requires security-scoped bookmarks for local pane access). |
 | **Hardened runtime** | Enabled when signing with `MACSCP_SIGN_IDENTITY` via `packaging/MacSCP.entitlements`. |
 | **Outbound network** | Required for SFTP; entitlement `com.apple.security.network.client` is included in release signing. |
-| **Traversio (AGPL)** | Citadel default; Traversio only for SSH agent or explicit opt-in — see [traversio-licensing.md](traversio-licensing.md) and [NOTICE](../NOTICE). |
+| **Traversio (AGPL)** | Citadel default; Traversio for SSH agent, **proxy sessions**, or explicit opt-in — see [traversio-licensing.md](traversio-licensing.md) and [NOTICE](../NOTICE). |
+| **Sandbox variant** | `packaging/MacSCP.sandbox.entitlements` + `SecurityScopedBookmarkStore` for future MAS track; not used in default DMG yet. |
 
 ---
 

@@ -1,4 +1,10 @@
-// FTPStreamChannel.swift — CFStream-based FTP control and passive data channels.
+// FTPStreamChannel.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// CFStream-based FTP control and passive data channels. FTPTransferBackend owns a channel
+// for plain FTP and FTPS (implicit TLS or explicit AUTH TLS).
+//
 
 import Foundation
 import MacSCPCore

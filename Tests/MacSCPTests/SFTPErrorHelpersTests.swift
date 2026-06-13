@@ -1,3 +1,9 @@
+// SFTPErrorHelpersTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// SFTPErrorHelpers.isAlreadyExists recognizes Citadel and Traversio mkdir failure messages.
+//
 @testable import MacSCPBackends
 import XCTest
 

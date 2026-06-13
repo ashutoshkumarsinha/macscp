@@ -1,7 +1,11 @@
-// AppModel.swift — Thin facade over coordinators; SwiftUI binds here via @Observable.
+// AppModel.swift
 //
-// AppModel forwards state to views and implements TransferBackendProvider for the queue.
-// Business logic lives in Coordinators/ (profile, session, panes, transfers).
+// WHAT THIS FILE DOES
+// -------------------
+// Thin facade over coordinators; SwiftUI views bind here via @Observable. Forwards state
+// to views and implements TransferBackendProvider for the queue; business logic lives in
+// Coordinators/ (profile, session, panes, transfers).
+//
 
 import AppKit
 import Foundation

@@ -1,9 +1,23 @@
+// CLIActions.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Implements macscp CLI verbs: open, close, ls, get, put, sync, and script execution.
+// MacSCPCLIMain subcommands delegate here; actions use CLISessionStore for the live backend.
+//
 import Foundation
 import MacSCPCore
 import MacSCPBackends
 
 enum CLIActions {
-    static func open(url: String, password: String?, agent: Bool, hostkey: String?, batch: Bool) async throws {
+    static func open(
+        url: String,
+        password: String?,
+        agent: Bool,
+        hostkey: String?,
+        batch: Bool,
+        rawSettings: [String] = []
+    ) async throws {
         try await CLISessionStore.shared.loadSettings()
         if batch {
             await HostKeyTrustGate.shared.setMode(.batchStrict)
@@ -16,7 +30,7 @@ enum CLIActions {
         }
         var auth = parsed.authMethod
         if agent { auth = .agent }
-        let config = CLISessionBuilder.configuration(
+        var config = CLISessionBuilder.configuration(
             transferProtocol: parsed.transferProtocol,
             host: parsed.host,
             port: parsed.port,
@@ -28,6 +42,8 @@ enum CLIActions {
             hostKeyFingerprint: hostkey,
             implicitTLS: parsed.implicitTLS
         )
+        OpenSSHRawSettings.apply(rawSettings, to: &config)
+        config.mergeOpenSSHConfig()
         do {
             try await CLISessionStore.shared.connect(config)
             print("Connected to \(parsed.host):\(parsed.port)")

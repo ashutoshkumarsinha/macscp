@@ -1,4 +1,10 @@
-// MacSCPScriptingController.swift — AppleScript command handlers (connect, disconnect, upload, download).
+// MacSCPScriptingController.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// AppleScript command handlers for connect, disconnect, upload, and download. MacSCPApp sets
+// appModel; MacSCPApplication and ShortcutsBridge invoke these async entry points.
+//
 
 import AppKit
 import Foundation

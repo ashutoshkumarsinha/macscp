@@ -1,4 +1,10 @@
-// AppLockService.swift — Optional Touch ID / device authentication before revealing sessions.
+// AppLockService.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Optional Touch ID / device authentication before revealing sessions. MacSCPApp checks
+// isEnabled and authenticate() when the user opens a saved profile or commander UI.
+//
 
 import Foundation
 import LocalAuthentication

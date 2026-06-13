@@ -1,3 +1,9 @@
+// SFTPConnectionURLTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// SFTPConnectionURL.parse for credentials, custom ports, key paths, and path normalization.
+//
 import MacSCPCore
 import XCTest
 

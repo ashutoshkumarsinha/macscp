@@ -1,3 +1,10 @@
+// EmbeddedTerminalView.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// SwiftUI panel that runs shell commands over the active SSH session.
+// Shown in the session workspace for quick remote command execution.
+//
 import SwiftUI
 
 struct EmbeddedTerminalView: View {

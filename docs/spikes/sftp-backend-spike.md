@@ -305,7 +305,7 @@ Checklist to complete during Phase 0 (1–2 days each):
 - [x] Load `~/.ssh/id_ed25519` with passphrase from Keychain.
 - [x] Authenticate via `SSH_AUTH_SOCK` (system agent).
 - [x] Read `KnownHosts` / TOFU store; reject changed keys.
-- [ ] Honor `ProxyJump` from OpenSSH config (Traversio selected when jump host configured in profile).
+- [x] Honor `ProxyJump` from OpenSSH config (Traversio selected when jump host configured in profile).
 - [x] Document cipher mismatch errors with actionable UI text (via BackendError messages).
 
 ---
@@ -328,7 +328,8 @@ Checklist to complete during Phase 0 (1–2 days each):
 
 - Upload throughput remains < 80% of OpenSSH after adapter optimization, or
 - > 10% failure rate against a [Public SFTP test server](http://www.sftp.net/public-servers) sample set, or
-- Blocker on ssh-agent / ProxyJump with Citadel.
+- Blocker on ssh-agent with Citadel — **resolved** (Traversio for agent).
+- Blocker on ProxyJump with Citadel — **resolved** (Traversio + `OpenSSHConfigParser` + `TraversioSSHConfigurationBuilder`).
 
 **Implementation strategy:**
 

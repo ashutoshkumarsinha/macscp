@@ -1,3 +1,10 @@
+// MacSCPFeatureSettings.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// User-facing feature toggles: history, notifications, iCloud sync, and UI layout mode.
+// MacSCPConfiguration loads and persists these alongside transfer settings.
+//
 import Foundation
 
 public struct MacSCPFeatureSettings: Sendable, Equatable {

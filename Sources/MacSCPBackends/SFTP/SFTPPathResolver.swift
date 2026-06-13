@@ -1,4 +1,10 @@
-// SFTPPathResolver.swift — Shared remote path normalization (Citadel + Traversio).
+// SFTPPathResolver.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Shared remote path normalization for Citadel and Traversio backends. Tracks working directory
+// and resolves relative paths before list, upload, and download operations.
+//
 
 import Foundation
 

@@ -1,4 +1,10 @@
-// MacSCPApp.swift — Application entry point and root navigation.
+// MacSCPApp.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Application entry point and root navigation. Bootstraps MacSCPLogger, creates AppModel,
+// registers MacSCPScriptingController, and hosts SessionLoginView or CommanderView.
+//
 
 import MacSCPCore
 import SwiftUI

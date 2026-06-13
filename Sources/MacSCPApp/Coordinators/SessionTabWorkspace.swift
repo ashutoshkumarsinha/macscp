@@ -1,3 +1,10 @@
+// SessionTabWorkspace.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Per-tab workspace bundling session, local, and remote pane coordinators.
+// SessionTabWorkspace is the unit AppModel keeps for each open connection tab.
+//
 import Foundation
 import MacSCPCore
 import Observation

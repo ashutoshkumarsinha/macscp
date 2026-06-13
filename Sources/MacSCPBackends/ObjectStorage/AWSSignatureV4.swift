@@ -1,3 +1,10 @@
+// AWSSignatureV4.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Signs HTTP requests for AWS S3-compatible APIs using Signature Version 4.
+// S3MultipartUpload and the S3 backend call sign to attach auth headers.
+//
 import Crypto
 import Foundation
 import MacSCPCore

@@ -1,7 +1,11 @@
-// TransferCoordinator.swift — Upload/download orchestration, overwrite prompts, queue binding.
+// TransferCoordinator.swift
 //
-// Expands directory selections into flat file lists via DirectoryTransferPlanner,
-// detects name conflicts, and enqueues jobs on TransferQueue.
+// WHAT THIS FILE DOES
+// -------------------
+// Upload/download orchestration, overwrite prompts, and queue binding. Expands directory
+// selections via DirectoryTransferPlanner, detects name conflicts, and enqueues jobs on
+// TransferQueue; AppModel exposes overwritePrompt to CommanderView.
+//
 
 import Foundation
 import MacSCPCore

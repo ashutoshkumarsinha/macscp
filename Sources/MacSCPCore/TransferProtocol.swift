@@ -1,3 +1,10 @@
+// TransferProtocol.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Core enums and structs for supported protocols, auth methods, proxies, and advanced settings.
+// SessionConfiguration, ConnectionURL, and TransferBackendFactory reference these types.
+//
 import Foundation
 
 public enum TransferProtocol: String, Codable, Sendable {

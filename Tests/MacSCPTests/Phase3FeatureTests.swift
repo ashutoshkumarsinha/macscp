@@ -1,3 +1,9 @@
+// Phase3FeatureTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// TransferHistoryStore persistence and related phase-3 feature settings integration.
+//
 import Foundation
 @testable import MacSCPCore
 import XCTest

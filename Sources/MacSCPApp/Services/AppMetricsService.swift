@@ -1,3 +1,10 @@
+// AppMetricsService.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Records and reads launch and connect timing metrics in UserDefaults.
+// App startup and SessionCoordinator call recordLaunchComplete and recordConnect.
+//
 import Foundation
 import MacSCPCore
 

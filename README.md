@@ -1,6 +1,6 @@
 # MacSCP
 
-Open-source, WinSCP-inspired SFTP client for macOS (**v0.3** developer preview). dual-pane commander, transfer queue, directory sync, file operations, host key prompts, external remote editor, live sync, Touch ID lock, terminal hand-off, Quick Look, SSH agent auth, Apple Silicon performance tuning, `macscp` CLI, and configurable logging.
+Open-source, WinSCP-inspired SFTP client for macOS (**v0.3** developer preview). Dual-pane commander, transfer queue, directory sync (one-way and bidirectional), file operations, host key prompts, external/internal remote editor, live sync, Touch ID lock, terminal hand-off, Quick Look, SSH agent auth, **OpenSSH config / ProxyJump**, multi-session tabs, explorer layout, integrated SSH pane, master password + encrypted profile export, cloud backends (WebDAV, S3, GCS), Apple Silicon performance tuning, `macscp` CLI, and configurable logging.
 
 ## Requirements
 
@@ -12,14 +12,14 @@ Open-source, WinSCP-inspired SFTP client for macOS (**v0.3** developer preview).
 
 ```text
 Sources/
-  MacSCPCore/         Models, TransferBackend protocol, config, sync engine, host key gate
-  MacSCPBackends/     Citadel + Traversio SFTP backends, listing cache, TCP tuning, buffer pool
+  MacSCPCore/         Models, TransferBackend protocol, config, OpenSSH config parser, sync engine
+  MacSCPBackends/     Citadel + Traversio SFTP/SCP, cloud/FTP/WebDAV backends
   MacSCPUI/           Transfer queue, overwrite batch types
-  MacSCPApp/          SwiftUI app + coordinators (profile, session, panes, transfers, sync)
+  MacSCPApp/          SwiftUI app + coordinators (profile, session, panes, transfers, sync, tabs)
   MacSCPCLI/          macscp-cli scriptable SFTP client (installed as macscp)
   MacSCPBenchmark/    macscp-benchmark CLI (throughput vs OpenSSH)
 Tests/
-  MacSCPTests/        91 tests (88 XCTest + 3 Swift Testing)
+  MacSCPTests/        138 XCTest + 3 Swift Testing cases
 scripts/
   benchmark-env.sh    Local OpenSSH SFTP server on port 2222
   run-benchmarks.sh   Start server + run benchmarks (--verify optional)
@@ -36,7 +36,7 @@ packaging/homebrew/   Cask (GUI) + Formula (CLI) templates
 
 ```bash
 make build
-make test      # 91 tests (88 XCTest + 3 Swift Testing)
+make test      # 138 XCTest + 3 Swift Testing
 make check     # build + test (CI-friendly)
 make ci        # check + bench-apple-silicon + verify pass criteria
 make cli       # build macscp-cli product
@@ -65,7 +65,7 @@ Default sample profile connects to `127.0.0.1:2222` with `.benchmark/keys/client
 
 **Commander:** select files or folders, then **Upload** (⇧⌘U) or **Download** (⇧⌘D). Drag between panes for the same. Use the toolbar for **Sync**, **Terminal**, and **Live Sync**. Right-click entries for rename, delete, properties, Quick Look, and edit.
 
-**Authentication:** SSH key file, password (Keychain), or SSH agent (`SSH_AUTH_SOCK`). Agent sessions use the Traversio backend; key/password use Citadel by default. See [Traversio licensing policy](docs/traversio-licensing.md).
+**Authentication:** SSH key file, password (Keychain), or SSH agent (`SSH_AUTH_SOCK`). Agent and **proxy sessions** (HTTP, SOCKS5, ProxyJump) use the Traversio backend; key/password use Citadel by default. MacSCP merges `~/.ssh/config` at connect time (HostName, ProxyJump, etc.). See [Traversio licensing policy](docs/traversio-licensing.md).
 
 **Configuration:** `~/.macscp/config.toml` (logging + transfer tuning). Presets: `default`, `lan`, `wan`, `apple_silicon`. On first launch on Apple Silicon, new configs default to `preset = "apple_silicon"`. Logs: `~/.macscp/logs/`. See `make paths` and `make config`.
 

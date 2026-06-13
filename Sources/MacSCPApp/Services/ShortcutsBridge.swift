@@ -1,4 +1,10 @@
-// ShortcutsBridge.swift — Shared automation entry points for App Intents and URL handlers.
+// ShortcutsBridge.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Shared automation entry points for App Intents, URL handlers, and scripting. Connects via
+// saved profile name and runs upload/download with a temporary TransferBackend session.
+//
 
 import Foundation
 import MacSCPCore

@@ -1,3 +1,9 @@
+// TransferQueueTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// TransferQueue enqueue, execution, pause, cancel, overwrite prompting, and completion callbacks.
+//
 import MacSCPCore
 import MacSCPUI
 import XCTest

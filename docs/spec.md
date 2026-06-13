@@ -9,7 +9,7 @@ An open-source, WinSCP-inspired file transfer client rebuilt from the ground up 
 | Field | Value |
 |---|---|
 | Version | 0.3 (draft) |
-| Status | Phase 0–3 largely implemented; SFTP MVP + Apple Silicon performance + parity + cloud integrations in v0.3 preview |
+| Status | Phase 0–4 largely implemented; v0.3 developer preview (SFTP MVP + cloud + parity features) |
 | Target OS | macOS 15 Sequoia minimum; macOS 26 Tahoe primary |
 | Architecture | Apple Silicon native (arm64); Intel best-effort via Rosetta where feasible |
 | Language | Swift 6 |
@@ -71,14 +71,14 @@ MacSCP fills the gap left by WinSCP being Windows-only. macOS users currently ch
 | Cold launch to connected dual-pane | < 3 s (cached session) | Not measured |
 | Crash-free sessions | > 99.5% | Not measured |
 | Keychain credential retrieval | < 100 ms | Not measured |
-| CLI script compatibility | Documented subset of WinSCP scripting verbs | Spec only (`macscp` CLI not shipped) |
-| Unit test coverage (core/backends) | All critical transfer paths covered | **102** XCTest cases + **3** Swift Testing cases (`make check`) |
+| CLI script compatibility | Documented subset of WinSCP scripting verbs | **Shipped:** `macscp-cli` (open, ls, get, put, sync, script); full WinSCP parity partial |
+| Unit test coverage (core/backends) | All critical transfer paths covered | **138** XCTest cases + **3** Swift Testing cases (`make check`) |
 
 ---
 
 ## 1. User Interface & Experience (UI/UX)
 
-MacSCP bridges functional density and macOS elegance. Default layout is **Commander** (dual-pane); optional **Explorer** mode (single remote tree + local Finder integration) ships in a later phase.
+MacSCP bridges functional density and macOS elegance. Default layout is **Commander** (dual-pane); optional **Explorer** mode (single remote tree + local integration) is available in the connection form.
 
 ### 1.1 Dual-Pane Commander (Primary)
 
@@ -144,7 +144,8 @@ All protocol implementations live behind a shared **`TransferBackend`** protocol
 - Resume interrupted transfers (offset resume for SFTP; REST for FTP where supported).
 - Concurrent transfer workers (default from `config.toml`; presets tune pool size, pipelined reads/writes, and batch uploads).
 - **Transfer performance presets** (`default`, `lan`, `wan`, `apple_silicon`) in `~/.macscp/config.toml` — see §2.3.
-- **Backend selection:** Citadel for key/password by default; Traversio when auth method is SSH agent or `use_traversio_for_performance = true`.
+- **Backend selection:** Citadel for key/password by default; Traversio when auth method is SSH agent, when any **proxy** is configured (HTTP, SOCKS5, ProxyJump), or when `use_traversio_for_performance = true`.
+- **OpenSSH config:** At connect, merge `~/.ssh/config` Host blocks (HostName, Port, User, IdentityFile, ProxyJump). Profile proxy fields override config. CLI: `--rawsettings ProxyJump=…`.
 - **TCP tuning (Citadel):** post-connect `SO_SNDBUF`, `SO_RCVBUF`, and `TCP_NODELAY` derived from active preset / network profile.
 - **Listing cache:** 3 s TTL on remote directory listings (Citadel and Traversio).
 - **Optional streaming checksums** during upload when `verify_checksums = true`.
@@ -419,7 +420,7 @@ Future backends (FTP, WebDAV, S3) implement the same `TransferBackend` surface w
 | `MacSCPUI` | Background transfer queue, job state machine, overwrite batch types (shared by app and tests) |
 | `MacSCPApp` | SwiftUI executable, coordinator decomposition, session profiles, dual-pane commander |
 | `MacSCPBenchmark` | `macscp-benchmark` CLI — throughput comparison vs OpenSSH (`make bench-apple-silicon`) |
-| `MacSCPTests` | Unit and integration tests against local OpenSSH fixture (port 2222); **102** XCTest + **3** Swift Testing cases |
+| `MacSCPTests` | Unit and integration tests against local OpenSSH fixture (port 2222); **138** XCTest + **3** Swift Testing cases |
 
 Shipped: `macscp-cli` Swift product (installed as `macscp`; see [cli-reference.md](cli-reference.md)).
 
@@ -514,7 +515,7 @@ Run: `make test` or `swift test`.
 - [x] CI benchmark gate vs OpenSSH (`verify-benchmark-report.sh`)
 - [x] External remote editor (download → edit → re-upload)
 - [x] Internal remote editor
-- [x] Directory compare + one-way sync
+- [x] Directory compare + one-way and bidirectional sync
 - [x] `macscp` CLI: open, get, put, ls, sync, script (product `macscp-cli`)
 
 ### Phase 2 — Parity+ (8–12 weeks)
@@ -544,6 +545,7 @@ Run: `make test` or `swift test`.
 - [x] Integrated SSH command pane
 - [x] Bidirectional directory sync
 - [x] Proxy settings (HTTP, SOCKS5, SSH jump → Traversio)
+- [x] OpenSSH `~/.ssh/config` merge + CLI `--rawsettings` (ProxyJump, HostName, Port, User)
 - [x] Master password + encrypted profile export
 - [x] S3 multipart upload (large files)
 - [x] Finder Sync badges on synced folders
@@ -563,7 +565,7 @@ Run: `make test` or `swift test`.
 | 2 | Sandbox enabled at ship? | **Resolved (phased):** No App Sandbox in v0.3 direct distribution; hardened runtime + network entitlements when signed; full sandbox + bookmarks for MAS track — [security.md](security.md) |
 | 3 | Ship on Mac App Store? | Direct + Homebrew first; MAS after sandbox/bookmarks |
 | 4 | Master password vs pure Keychain? | Both: Keychain default, master password for exports |
-| 5 | Explorer mode in v1? | Defer to Phase 2 |
+| 5 | Explorer mode in v1? | **Resolved:** Explorer layout mode shipped (Phase 4); Commander remains default |
 | 6 | Traversio as default backend? | **Resolved:** Citadel default; Traversio for agent + explicit opt-in only — [traversio-licensing.md](traversio-licensing.md), [NOTICE](../NOTICE) |
 
 ---
@@ -588,7 +590,9 @@ Run: `make test` or `swift test`.
 |---|---|---|---|
 | Site Manager | Session sidebar + profile editor | 0 | Done |
 | Commander interface | Dual-pane commander | 0–1 | Done |
-| Synchronize directories | Compare + sync dialog | 1–2 | Done (one-way) |
+| Synchronize directories | Compare + sync dialog | 1–4 | Done (one-way + bidirectional) |
+| Session tabs | Multi-connection tab bar | 4 | Done (`⌘T` / `⌘W`) |
+| Proxy / bastion | HTTP, SOCKS5, ProxyJump | 4 | Done (Traversio; OpenSSH config merge) |
 | Keep Remote Directory Up To Date | Live sync | 2 | Done |
 | Integrated editor | Internal + external editor | 1 | Done |
 | PuTTY integration | Terminal / iTerm hand-off | 2 | Done |

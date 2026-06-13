@@ -1,3 +1,10 @@
+// ObjectStorageLayout.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Credentials, endpoint layout, and path helpers for S3- and GCS-compatible storage.
+// Object-storage backends and AWSSignatureV4 use ObjectStorageLayout for bucket URLs.
+//
 import Foundation
 
 public struct ObjectStorageCredentials: Sendable, Equatable {

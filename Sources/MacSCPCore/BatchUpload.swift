@@ -1,3 +1,10 @@
+// BatchUpload.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Models a multi-file upload batch and plans local-to-remote path mapping.
+// TransferCoordinator and backends use BatchUploadItem lists for directory uploads.
+//
 import Foundation
 
 public struct BatchUploadItem: Sendable, Equatable {

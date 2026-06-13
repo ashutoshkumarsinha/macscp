@@ -1,7 +1,10 @@
-// ProfileCoordinator.swift — Saved session profiles and login draft editing.
+// ProfileCoordinator.swift
 //
-// Loads profiles.json, migrates legacy plaintext passwords to Keychain, and
-// exposes SessionProfileDraft for SessionLoginView.
+// WHAT THIS FILE DOES
+// -------------------
+// Saved session profiles and login draft editing. Loads profiles.json, migrates legacy
+// plaintext passwords to Keychain, and exposes SessionProfileDraft for SessionLoginView.
+//
 
 import Foundation
 import MacSCPCore

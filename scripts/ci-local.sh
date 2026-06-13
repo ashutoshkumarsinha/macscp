@@ -23,6 +23,8 @@ for arg in "$@"; do
   esac
 done
 
+# --- Build and test ---
+
 echo "==> make check"
 make check
 
@@ -30,6 +32,8 @@ if [[ "${SKIP_BENCH}" -eq 1 ]]; then
   echo "==> skipping benchmarks (--skip-bench)"
   exit 0
 fi
+
+# --- Benchmark verification ---
 
 echo "==> make bench-verify"
 make bench-verify

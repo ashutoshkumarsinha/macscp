@@ -1,3 +1,9 @@
+// StreamingChecksumTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// StreamingSHA256 incremental hashing matches one-shot Checksum.sha256 results.
+//
 import MacSCPCore
 import XCTest
 

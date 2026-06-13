@@ -2,14 +2,9 @@
 //
 // WHAT THIS FILE DOES
 // -------------------
-// Logs TCP tuning values to ~/.macscp/logs so you can confirm which preset was
-// active at connect time. Does not change sockets itself — CitadelTCPConnector
-// applies the actual setOption calls.
+// Logs TCP tuning values to ~/.macscp/logs so you can confirm which preset was active at connect.
+// Does not change sockets itself — CitadelTCPConnector applies the actual setOption calls.
 //
-// BEGINNER TIP
-// ------------
-// Enable debug logging in config.toml to see these lines:
-//   level = "debug"
 
 import Foundation
 import MacSCPCore

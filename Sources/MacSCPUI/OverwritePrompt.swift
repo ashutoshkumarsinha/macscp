@@ -1,3 +1,10 @@
+// OverwritePrompt.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Shared models for overwrite conflict batches and user resolution actions.
+// MacSCPUI TransferQueue builds PendingTransferBatch; OverwritePromptView presents choices.
+//
 import Foundation
 import MacSCPCore
 

@@ -1,4 +1,10 @@
-// TransferBackendFactory.swift — Protocol routing for SFTP, SCP, FTP, and FTPS backends.
+// TransferBackendFactory.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Protocol routing for SFTP, SCP, FTP, FTPS, WebDAV, and object-storage backends.
+// SessionCoordinator and CLI call make(for:backend:) after SFTPBackendSelector chooses Citadel or Traversio.
+//
 
 import Foundation
 import MacSCPCore

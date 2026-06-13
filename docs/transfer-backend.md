@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.2 |
+| Version | 0.3 |
 | Related | [spec.md §7](spec.md), [HLD §7](hld.md), [SFTP spike](spikes/sftp-backend-spike.md) |
 
 All MacSCP protocol implementations (SFTP, FTP, S3, …) conform to a shared Swift protocol in `MacSCPCore`. The GUI, CLI, and sync engine depend only on this interface — never on Citadel, libssh2, or other backend specifics.
@@ -112,12 +112,16 @@ public enum SFTPBackendKind: String, Sendable, CaseIterable {
 }
 ```
 
-**App selection logic** (`SessionCoordinator`):
+**App / CLI selection logic** (`SessionCoordinator`, `CLISessionStore`):
 
-| Auth method | Backend |
+| Condition | Backend |
 |---|---|
-| `.publicKey`, `.password` | Citadel (default) |
-| `.agent` | Traversio (`SSHAgentAuthSupport.traversioAuthentication()`) |
+| `.publicKey`, `.password` (no proxy) | Citadel (default) |
+| `.agent` | Traversio |
+| `advanced.proxyType != .none` (HTTP, SOCKS5, jump) | Traversio |
+| `use_traversio_for_performance = true` | Traversio (key/password) |
+
+Before connect, `SessionConfiguration.mergeOpenSSHConfig()` may set `proxyType = .jump` from `~/.ssh/config`. Traversio connects via `TraversioSSHConfigurationBuilder` (`proxyJumpHosts`, `connectionProxy`).
 
 Pass `serialized: true` to wrap the backend in `SerializingTransferBackend` (actor) for safe concurrent queue access.
 
@@ -162,8 +166,9 @@ public enum BackendError: Error, Sendable {
 ```text
 MacSCPBackends/SFTP/
   CitadelSFTPBackend.swift      # Default key/password backend
+  TraversioSFTPBackend.swift    # Agent + proxy + optional perf mode
+  TraversioSSHConfigurationBuilder.swift  # ProxyJump, HTTP/SOCKS → Traversio SSHClientConfiguration
   CitadelTCPConnector.swift     # Citadel TCP buffer / Nagle tuning
-  TraversioSFTPBackend.swift    # Agent auth + benchmarks
   SFTPPathResolver.swift        # Shared path normalize/resolve
   SFTPDirectoryCache.swift      # Session mkdir cache
   SFTPListingCache.swift        # Remote listDirectory cache (3 s TTL)
@@ -181,6 +186,10 @@ MacSCPBackends/SFTP/
   PooledTransferBackend.swift   # Multi-connection pool for parallel queue jobs
   SerializingTransferBackend.swift
   SFTPErrorHelpers.swift
+
+MacSCPCore/
+  OpenSSHConfigParser.swift     # Parse ~/.ssh/config Host blocks
+  SessionConfiguration+OpenSSH.swift  # mergeOpenSSHConfig, CLI raw settings
 ```
 
 ### Performance notes
@@ -213,4 +222,4 @@ Conformance coverage: list, upload/download, skip/rename/overwrite, cancellation
 
 ---
 
-*End of TransferBackend protocol v0.2*
+*End of TransferBackend protocol v0.3*

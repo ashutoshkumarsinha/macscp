@@ -1,3 +1,10 @@
+// TransferOptions.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Per-transfer policies and tuning: overwrite, checksum, chunk size, and concurrency limits.
+// TransferQueue, backends, and benchmarks construct TransferOptions for each job.
+//
 import Foundation
 
 public enum OverwritePolicy: Sendable {

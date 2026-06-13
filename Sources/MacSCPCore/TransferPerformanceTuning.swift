@@ -2,20 +2,10 @@
 //
 // WHAT THIS FILE DOES
 // -------------------
-// Reads transfer settings from config.toml and turns them into concrete numbers:
-// how many SFTP connections to open, how big TCP buffers should be, etc.
+// Reads transfer settings from config.toml and turns presets into concrete pool sizes, TCP buffer
+// sizes, and chunk tuning. SessionCoordinator, MacSCPConfiguration, CitadelTCPConnector, and
+// macscp-benchmark consume these values at connect and report time.
 //
-// WHO USES IT
-// -----------
-// - SessionCoordinator (app connect) — pool size + network profile
-// - MacSCPConfiguration — apple_silicon preset on first launch
-// - CitadelTCPConnector — socket buffer sizes after SSH connect
-// - macscp-benchmark — tags reports with network profile from env vars
-//
-// BEGINNER TIP
-// ------------
-// A "preset" (lan, wan, apple_silicon) is a bundle of defaults. Users can still
-// override individual keys in config.toml after choosing a preset.
 
 import Foundation
 

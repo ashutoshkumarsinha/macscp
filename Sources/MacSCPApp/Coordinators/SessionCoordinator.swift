@@ -1,18 +1,12 @@
-// SessionCoordinator.swift — SSH/SFTP connect and disconnect lifecycle.
+// SessionCoordinator.swift
 //
 // WHAT THIS FILE DOES
 // -------------------
-// Owns the live TransferBackend while you are connected: picks Citadel vs Traversio,
-// opens one or more SFTP connections (pool), and stores remotePath for the UI.
+// Owns the live TransferBackend during connect/disconnect: picks Citadel vs Traversio,
+// opens one or pooled SFTP connections, and stores remotePath for the UI. Builds
+// SessionConfiguration from the login form, calls SFTPBackendSelector.select, then
+// SessionConnectionService.connect after effectivePoolSize chooses pooling.
 //
-// FLOW (connect)
-// --------------
-// 1. Build SessionConfiguration from login form + transfer preset → networkProfile
-// 2. SFTPBackendSelector.select → .citadel or .traversio
-// 3. effectivePoolSize → 1 connection or PooledTransferBackend (Apple Silicon)
-// 4. SessionConnectionService.connect → backend.connect(configuration:)
-//
-// See docs/code-walkthrough.md §4 and §10 for diagrams.
 
 import Foundation
 import MacSCPCore
@@ -45,6 +39,7 @@ final class SessionCoordinator {
     private func configuredSession(from draft: SessionProfileDraft) -> SessionConfiguration {
         var session = draft.toSessionConfiguration()
         session.networkProfile = TransferPerformanceTuning.networkProfile(from: transferSettings.preset)
+        session.mergeOpenSSHConfig()
         return session
     }
 
@@ -77,7 +72,7 @@ final class SessionCoordinator {
                     settings: transferSettings,
                     advanced: session.advanced
                 )
-                SFTPBackendSelector.logSelection(backendKind, settings: transferSettings)
+                SFTPBackendSelector.logSelection(backendKind, settings: transferSettings, advanced: session.advanced)
                 TransferNetworkTuning.logIntendedSettings(preset: transferSettings.preset)
 
                 let poolSize = TransferPerformanceTuning.effectivePoolSize(from: transferSettings)

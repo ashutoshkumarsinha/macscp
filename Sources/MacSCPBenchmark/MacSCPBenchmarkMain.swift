@@ -1,3 +1,10 @@
+// MacSCPBenchmarkMain.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// CLI entry point for MacSCP performance benchmarks and upload spikes.
+// ArgumentParser subcommands dispatch to BenchmarkRunner, ProfileUploadRunner, and UploadSpikeRunner.
+//
 import ArgumentParser
 import Foundation
 import MacSCPCore

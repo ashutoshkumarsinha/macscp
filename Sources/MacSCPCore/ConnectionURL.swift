@@ -1,3 +1,10 @@
+// ConnectionURL.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Parses sftp, scp, ftp, and ftps URLs into a unified ConnectionURL value.
+// CLIActions, SessionConfigurationBuilder, and the app use parse for connection strings.
+//
 import Foundation
 
 public enum TransferProtocolDefaults {

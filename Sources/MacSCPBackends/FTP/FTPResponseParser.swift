@@ -1,4 +1,10 @@
-// FTPResponseParser.swift — Parse multi-line FTP control responses.
+// FTPResponseParser.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Parses multi-line FTP control responses into FTPResponse values. FTPStreamChannel and
+// FTPTransferBackend read replies before issuing the next FTP command.
+//
 
 import Foundation
 import MacSCPCore

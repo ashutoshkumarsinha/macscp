@@ -1,3 +1,10 @@
+// TransferCancellation.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Thread-safe cancellation token checked during long-running transfers.
+// TransferOptions carries TransferCancellation; backends poll isCancelled and throwIfCancelled.
+//
 import Foundation
 
 public final class TransferCancellation: @unchecked Sendable {

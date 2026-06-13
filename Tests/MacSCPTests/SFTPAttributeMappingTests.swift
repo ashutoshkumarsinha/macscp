@@ -1,3 +1,9 @@
+// SFTPAttributeMappingTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// SFTPAttributeMapping.entryType classification from Unix permission bitmasks.
+//
 import Foundation
 @testable import MacSCPCore
 import XCTest

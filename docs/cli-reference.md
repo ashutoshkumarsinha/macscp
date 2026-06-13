@@ -44,9 +44,22 @@ Invoking `macscp` with a `.macscp` script path as the sole argument is equivalen
 | `--privatekey <path>` | | SSH private key path |
 | `--passphrase <string>` | | Key passphrase (prefer `MACSCP_PASSPHRASE` env or Keychain) |
 | `--timeout <seconds>` | | Connection timeout (default: 30) |
-| `--rawsettings` | | Pass backend-specific settings (see below) |
+| `--rawsettings` | | OpenSSH-style `key=value` (repeatable). Keys: `ProxyJump`, `HostName`, `Port`, `User`. Applied on `open` before `~/.ssh/config` merge. |
 
-### Environment Variables
+### `--rawsettings` (OpenSSH-style)
+
+Used with `macscp open` (repeatable):
+
+| Key | Example | Effect |
+|---|---|---|
+| `ProxyJump` | `ProxyJump=bastion,jump2` | SSH jump chain → Traversio backend |
+| `HostName` | `HostName=prod.internal` | Target hostname |
+| `Port` | `Port=2222` | SSH port |
+| `User` | `User=deploy` | SSH username |
+
+After raw settings, MacSCP merges `~/.ssh/config` for matching Host aliases (unless profile proxy is already set).
+
+---
 
 | Variable | Purpose |
 |---|---|
@@ -103,7 +116,11 @@ macscp open sftp://user@host -hostkey="SHA256:abcdef..." -batch
 |---|---|
 | `-passive` | FTP passive mode (default for FTP) |
 | `-explicit` / `-implicit` | FTPS mode |
-| `-rawsettings ProxyJump=jump.host` | OpenSSH-style raw settings |
+| `--rawsettings ProxyJump=jump.host` | Jump host or comma-separated chain (see Global Options) |
+| `--rawsettings HostName=real.host` | Override hostname before OpenSSH config merge |
+| `--agent` | Use SSH agent (`SSH_AUTH_SOCK`) |
+
+On connect, MacSCP applies `--rawsettings`, then merges matching stanzas from `~/.ssh/config` (HostName, Port, User, IdentityFile, ProxyJump when profile proxy is unset). Proxy/jump sessions use the Traversio backend.
 
 **Exit:** 0 connected; 2/4/5 on failure.
 
@@ -260,11 +277,13 @@ Synchronize local and remote directories.
 macscp sync <local> <remote> [options]
 macscp sync ./public/ /var/www/html/ -mirror -delete
 macscp sync ./public/ /var/www/html/ -preview
+macscp sync ./public/ /var/www/html/ --bidirectional -preview
 ```
 
 | Option | Description |
 |---|---|
 | `-mirror` | Mirror source → target (source is first path) |
+| `--bidirectional` | Upload and download changed files (no delete by default) |
 | `-direction=local\|remote` | Explicit sync direction |
 | `-delete` | Delete extraneous files on target |
 | `-preview` | Dry run; print planned actions only |

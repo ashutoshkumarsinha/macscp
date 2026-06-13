@@ -1,4 +1,10 @@
-// TransferHistoryView.swift — Optional local transfer log browser.
+// TransferHistoryView.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Optional local transfer log browser. Reads TransferHistoryEntry rows from disk when the
+// user opens history from CommanderView or settings.
+//
 
 import SwiftUI
 import MacSCPCore

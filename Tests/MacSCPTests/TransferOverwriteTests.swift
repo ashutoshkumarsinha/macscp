@@ -1,3 +1,9 @@
+// TransferOverwriteTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// TransferPathPlanner rename suffix logic and next-available local and remote path selection.
+//
 import MacSCPCore
 import MacSCPUI
 import XCTest

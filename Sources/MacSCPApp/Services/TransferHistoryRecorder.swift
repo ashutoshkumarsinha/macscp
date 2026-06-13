@@ -1,4 +1,10 @@
-// TransferHistoryRecorder.swift — Persists completed transfers when enabled in config.
+// TransferHistoryRecorder.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Persists completed transfers when enabled in config. TransferCoordinator calls record after
+// each job finishes; TransferHistoryView reads the log from the user's home directory.
+//
 
 import Foundation
 import MacSCPCore

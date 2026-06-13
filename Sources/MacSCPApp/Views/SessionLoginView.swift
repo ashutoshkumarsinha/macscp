@@ -1,4 +1,10 @@
-// SessionLoginView.swift — Profile sidebar and connection form (key / password / agent).
+// SessionLoginView.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Profile sidebar and connection form (key, password, or SSH agent). AppModel draft state
+// drives connect; users pick or edit SessionProfile entries before CommanderView opens.
+//
 
 import SwiftUI
 import AppKit

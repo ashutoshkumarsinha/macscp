@@ -1,3 +1,10 @@
+// HostKeyPromptView.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Modal prompt when an unknown SSH host key must be trusted or rejected.
+// HostKeyTrustGate presents this view for interactive host-key verification.
+//
 import MacSCPCore
 import SwiftUI
 

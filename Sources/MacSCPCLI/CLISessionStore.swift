@@ -1,3 +1,10 @@
+// CLISessionStore.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Actor holding the CLI's singleton TransferBackend connection and remote cwd.
+// CLIActions connect, list, transfer, and disconnect through this shared store.
+//
 import Foundation
 import MacSCPCore
 import MacSCPBackends
@@ -34,7 +41,8 @@ actor CLISessionStore {
 
         let backendKind = SFTPBackendSelector.select(
             authMethod: configuration.authMethod,
-            settings: transferSettings
+            settings: transferSettings,
+            advanced: session.advanced
         )
         let instance = try TransferBackendFactory.make(
             for: configuration.protocol,

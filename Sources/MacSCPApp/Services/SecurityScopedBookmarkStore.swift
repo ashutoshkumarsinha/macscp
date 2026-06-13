@@ -1,3 +1,10 @@
+// SecurityScopedBookmarkStore.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Persists and resolves security-scoped bookmarks for the local file pane root.
+// LocalPaneCoordinator saves bookmarks here so sandboxed access survives relaunch.
+//
 import Foundation
 
 enum SecurityScopedBookmarkStore {

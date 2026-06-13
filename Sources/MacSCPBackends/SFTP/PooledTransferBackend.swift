@@ -1,4 +1,10 @@
-// PooledTransferBackend.swift — Multiple SFTP connections for parallel transfer jobs.
+// PooledTransferBackend.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Multiple SFTP connections for parallel transfer jobs via TransferConnectionPool.
+// SessionCoordinator wraps backends in PooledTransferBackend when pool size > 1 on Apple Silicon.
+//
 
 import Foundation
 import MacSCPCore

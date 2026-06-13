@@ -7,6 +7,8 @@
 # Usage:
 #   ./scripts/verify-benchmark-report.sh
 #   ./scripts/verify-benchmark-report.sh .benchmark/benchmark-results/report.json
+#
+# Related: run-benchmarks.sh, Sources/MacSCPBenchmark/
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,6 +19,8 @@ if [[ ! -f "${REPORT}" ]]; then
   echo "Run: make bench or make bench-apple-silicon" >&2
   exit 1
 fi
+
+# --- Check summary.passCriteriaMet ---
 
 python3 - "${REPORT}" <<'PY'
 import json

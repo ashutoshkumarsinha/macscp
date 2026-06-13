@@ -1,5 +1,10 @@
-// BackendError.swift — Errors thrown by SFTP backends and transfer logic.
-// The UI can show error.localizedDescription to the user.
+// BackendError.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Errors thrown by SFTP backends and transfer logic. UI and CLI show error.localizedDescription
+// for connect failures, host-key rejection, path errors, and cancelled transfers.
+//
 
 import Foundation
 

@@ -19,7 +19,8 @@ open dist/MacSCP-0.3.0.dmg
 | Script | Purpose |
 |---|---|
 | `scripts/generate-app-icon.sh` | Crop master to square 1024×1024, fill asset catalog, build `.icns` |
-| `scripts/package-dmg.sh` | Release build, assemble `.app`, codesign, create DMG |
+| `scripts/build-finder-sync.sh` | Compile Finder Sync extension (`.appex`) |
+| `scripts/package-dmg.sh` | Release build, assemble `.app`, embed Finder Sync, codesign, create DMG |
 
 Makefile targets: `make icon`, `make package-dmg`.
 

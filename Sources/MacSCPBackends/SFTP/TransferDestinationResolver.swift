@@ -1,3 +1,10 @@
+// TransferDestinationResolver.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Resolves local and remote upload/download paths under an OverwritePolicy.
+// SFTP backends invoke resolveRemoteUploadPath and resolveLocalDownloadURL before transfers.
+//
 import Citadel
 import Foundation
 import MacSCPCore

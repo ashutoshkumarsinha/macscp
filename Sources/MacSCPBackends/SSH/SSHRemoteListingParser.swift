@@ -1,4 +1,10 @@
-// SSHRemoteListingParser.swift — Parse `ls -la` output for SCP remote directory listings.
+// SSHRemoteListingParser.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Parses `ls -la` output into RemoteEntry rows for SCP remote directory listings.
+// TraversioSCPBackend runs remote ls and feeds output through this parser.
+//
 
 import Foundation
 import MacSCPCore

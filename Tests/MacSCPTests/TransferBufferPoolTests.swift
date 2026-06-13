@@ -1,3 +1,9 @@
+// TransferBufferPoolTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// TransferBufferPool borrow and recycle of NIO ByteBuffer instances for transfer I/O.
+//
 @testable import MacSCPBackends
 import NIO
 import XCTest

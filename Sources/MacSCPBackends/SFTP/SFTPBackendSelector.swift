@@ -2,17 +2,10 @@
 //
 // WHAT THIS FILE DOES
 // -------------------
-// Decides whether to use Citadel or Traversio for this session, and logs why.
+// Decides Citadel vs Traversio for a session and logs why. Agent auth or proxy → Traversio;
+// use_traversio_for_performance opt-in → Traversio; otherwise Citadel. SessionCoordinator calls
+// select() before TransferBackendFactory.make(...).
 //
-// RULES (in order)
-// ----------------
-// 1. SSH agent auth → Traversio (Citadel does not support agent well)
-// 2. use_traversio_for_performance = true in config → Traversio (AGPL — user opt-in)
-// 3. Otherwise → Citadel (default for key/password)
-//
-// BEGINNER TIP
-// ------------
-// SessionCoordinator calls select() before TransferBackendFactory.make(...).
 
 import MacSCPCore
 
@@ -22,7 +15,7 @@ public enum SFTPBackendSelector {
         settings: MacSCPTransferSettings,
         advanced: AdvancedSettings = AdvancedSettings()
     ) -> SFTPBackendKind {
-        if authMethod == .agent || advanced.proxyType == .jump {
+        if authMethod == .agent || advanced.proxyType != .none {
             return .traversio
         }
         if settings.useTraversioForPerformance {
@@ -32,7 +25,11 @@ public enum SFTPBackendSelector {
     }
 
     /// Writes a one-line reason to the log file so support/debugging is easier.
-    public static func logSelection(_ kind: SFTPBackendKind, settings: MacSCPTransferSettings) {
+    public static func logSelection(
+        _ kind: SFTPBackendKind,
+        settings: MacSCPTransferSettings,
+        advanced: AdvancedSettings = AdvancedSettings()
+    ) {
         let reason: String
         switch kind {
         case .traversio where settings.useTraversioForPerformance:
@@ -41,6 +38,8 @@ public enum SFTPBackendSelector {
                 "Traversio AGPL backend enabled for key/password session (use_traversio_for_performance). See NOTICE and docs/traversio-licensing.md.",
                 category: .backend
             )
+        case .traversio where advanced.proxyType != .none:
+            reason = "proxy (\(advanced.proxyType.rawValue))"
         case .traversio:
             reason = "SSH agent auth"
         case .citadel where settings.preset == .appleSilicon:

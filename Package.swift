@@ -1,4 +1,25 @@
 // swift-tools-version: 6.2
+//
+// MacSCP Swift Package — module layout and build products.
+//
+// Sources/
+//   MacSCPCore/       Shared models, config, OpenSSH parsing, session types
+//   MacSCPBackends/   SCP/SFTP transport (Citadel, Traversio, OpenSSH subprocess)
+//   MacSCPUI/         SwiftUI views and app-agnostic UI helpers
+//   MacSCPApp/        macOS GUI executable (MacSCP)
+//   MacSCPCLI/        macscp-cli command-line tool
+//   MacSCPBenchmark/  macscp-benchmark performance harness
+//
+// Products (swift build --product <name>):
+//   MacSCP            GUI app
+//   macscp-cli        CLI for transfers and session management
+//   macscp-benchmark  SFTP backend benchmarks and upload spikes
+//   MacSCPCore        Library (core types)
+//   MacSCPBackends    Library (transport backends)
+//   MacSCPUI          Library (UI components)
+//
+// Tests: Tests/MacSCPTests/
+// Related: Makefile, docs/user-guide.md, docs/cli-reference.md
 
 import PackageDescription
 

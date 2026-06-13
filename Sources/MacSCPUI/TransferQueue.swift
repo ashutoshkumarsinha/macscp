@@ -1,3 +1,10 @@
+// TransferQueue.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Observable queue that schedules, runs, pauses, and tracks upload and download jobs.
+// AppModel owns TransferQueue; TransferQueueView binds to its jobs and progress state.
+//
 import Foundation
 import MacSCPCore
 

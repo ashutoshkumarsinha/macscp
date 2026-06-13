@@ -1,4 +1,10 @@
-// MacSCPLogger.swift — File logging controlled by ~/.macscp/config.toml.
+// MacSCPLogger.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// File logging controlled by ~/.macscp/config.toml. MacSCPApp bootstraps the shared logger;
+// backends and coordinators emit leveled messages with optional stderr mirroring.
+//
 
 import Foundation
 

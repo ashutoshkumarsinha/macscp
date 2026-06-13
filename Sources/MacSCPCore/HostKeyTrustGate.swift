@@ -1,4 +1,10 @@
-// HostKeyTrustGate.swift — Interactive host-key trust for GUI and strict batch CLI mode.
+// HostKeyTrustGate.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Interactive host-key trust for GUI and strict batch CLI mode. Surfaces HostKeyTrustRequest
+// to HostKeyPromptView; MacSCPHostKeySupport persists accepted SHA-256 fingerprints.
+//
 
 import Foundation
 

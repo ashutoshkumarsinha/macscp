@@ -1,3 +1,10 @@
+// S3MultipartUpload.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Uploads large local files to S3 via initiate, part upload, and complete APIs.
+// The S3 TransferBackend delegates big uploads here for parallel multipart transfers.
+//
 import Foundation
 import MacSCPCore
 

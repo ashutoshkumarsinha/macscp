@@ -1,3 +1,9 @@
+// BenchmarkHostInfoTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// BenchmarkHostInfo.current() captures architecture, cores, and network profile labels.
+//
 import MacSCPCore
 import XCTest
 

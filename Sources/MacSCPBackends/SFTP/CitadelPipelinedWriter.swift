@@ -1,4 +1,10 @@
-// CitadelPipelinedWriter.swift — Overlapped local reads and sliding-window SFTP writes.
+// CitadelPipelinedWriter.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Overlapped local reads and sliding-window SFTP writes for uploads. CitadelSFTPBackend
+// uses this to overlap disk read-ahead with concurrent in-flight WRITE requests.
+//
 
 import Citadel
 import Foundation

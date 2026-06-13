@@ -1,3 +1,9 @@
+// PaneTransferRulesTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// PaneTransferRules.acceptsDrop allows cross-pane drops and rejects same-pane drops.
+//
 import MacSCPCore
 import XCTest
 

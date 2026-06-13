@@ -1,6 +1,10 @@
-// SFTPBatchUploadExecutor.swift — Concurrent multi-file upload worker pool.
+// SFTPBatchUploadExecutor.swift
 //
-// Shared by CitadelSFTPBackend and TraversioSFTPBackend uploadBatch().
+// WHAT THIS FILE DOES
+// -------------------
+// Concurrent multi-file upload worker pool shared by CitadelSFTPBackend and TraversioSFTPBackend
+// uploadBatch(). Limits concurrency from transfer settings while preserving per-item results.
+//
 
 import Foundation
 import MacSCPCore

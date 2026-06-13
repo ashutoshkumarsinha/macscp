@@ -14,7 +14,7 @@ MacSCP is an open-source, WinSCP-inspired SFTP client for macOS. It provides a *
 
 On Apple Silicon, MacSCP applies optional **transfer presets** (connection pooling, larger chunks, TCP tuning) to improve throughput without manual tuning.
 
-This guide covers what is **implemented in v0.3**, including Phase 3 cloud protocols (WebDAV, S3, GCS), Finder Sync, AppleScript, optional iCloud profile sync, transfer history, and queue notifications.
+This guide covers what is **implemented in v0.3**, including Phase 3 cloud protocols (WebDAV, S3, GCS), Finder Sync, AppleScript, optional iCloud profile sync, transfer history, queue notifications, and **Phase 4** features (tabs, explorer layout, integrated SSH pane, bidirectional sync, proxy/OpenSSH config, master password, encrypted profile export).
 
 ---
 
@@ -35,7 +35,7 @@ This guide covers what is **implemented in v0.3**, including Phase 3 cloud proto
 git clone <repository-url> macscp
 cd macscp
 make build
-make test    # 91 tests (88 XCTest + 3 Swift Testing)
+make test    # 138 XCTest + 3 Swift Testing
 make check   # build + test (same as CI first step)
 ```
 
@@ -93,7 +93,9 @@ This starts OpenSSH on `127.0.0.1:2222` with key auth. The sample profile uses `
 
 For **SSH agent**, ensure `ssh-add -l` shows keys and `SSH_AUTH_SOCK` is set (macOS ssh-agent or 1Password agent). MacSCP uses the **Traversio** backend for agent sessions.
 
-For **SSH key file** or **password**, MacSCP uses the **Citadel** backend by default. You can opt into Traversio for key/password sessions with `use_traversio_for_performance = true` in config (AGPL — see §11).
+For **proxy or ProxyJump** (HTTP, SOCKS5, SSH bastion), MacSCP also uses **Traversio**. Set proxy in the connection form **Advanced → Proxy**, or rely on `~/.ssh/config` (see §12).
+
+For **SSH key file** or **password**, MacSCP uses the **Citadel** backend by default when no proxy is configured.
 
 On success, the **Commander** window opens with local files on the left and remote files on the right.
 
@@ -290,7 +292,7 @@ MacSCP registers App Shortcuts for:
 
 - **Connect to Session** — profile name
 - **Upload File** / **Download File** — profile + paths
-- **Sync Directories** — one-way sync
+- **Sync Directories** — compare and sync (one-way mirror or bidirectional)
 - **Run MacSCP Script** — `.macscp` file path
 
 Deep link to a saved profile:
@@ -398,10 +400,13 @@ Click **×** on a running job. MacSCP signals the backend to stop; the job moves
 | Shortcut | Action |
 |---|---|
 | **⇧⌘N** | New Connection (login sheet) |
+| **⌘T** / **⇧⌘T** | New session tab |
+| **⌘W** / **⇧⌘W** | Close session tab |
 | **⇧⌘U** | Upload selected local files |
 | **⇧⌘D** | Download selected remote files |
-
-Additional shortcuts (type-ahead, **⌘↑** parent) are planned per spec.
+| **Space** | Quick Look preview (remote file) |
+| Type-ahead | Start typing in a pane to jump to matching names |
+| **⌘↑** | Go to parent directory (local or remote pane) |
 
 ---
 
@@ -415,7 +420,8 @@ Additional shortcuts (type-ahead, **⌘↑** parent) are planned per spec.
 | Auth failed | Username, key path, password, or agent keys correct? |
 | Agent empty | Run `ssh-add -l`; ensure `SSH_AUTH_SOCK` is set |
 | Key not accepted | Server has your public key in `authorized_keys`? |
-| Host key error | First connect stores TOFU in `~/.macscp/known_hosts.json`; pin fingerprint in profile advanced settings when available |
+| Host key error | First connect stores TOFU in `~/.macscp/known_hosts.json`; pin fingerprint in profile advanced settings |
+| Proxy / jump fails | Verify bastion reachable; check `~/.ssh/config` ProxyJump chain; profile proxy overrides config |
 
 Test SSH manually:
 
@@ -457,7 +463,7 @@ MacSCP optimizes SFTP throughput in several ways:
 
 **Presets:** see [Apple Silicon Performance Guide](apple-silicon-performance.md).
 
-**Traversio performance mode:** `use_traversio_for_performance = true` switches key/password sessions to Traversio. SSH agent sessions always use Traversio.
+**Traversio performance mode:** `use_traversio_for_performance = true` switches key/password sessions to Traversio. SSH agent and **proxy** sessions always use Traversio.
 
 **Benchmarks (developers):** compare MacSCP against OpenSSH on loopback:
 
@@ -509,17 +515,61 @@ end tell
 
 ---
 
-## 13. What's Not in This Release
+### Proxy and ProxyJump
+
+MacSCP reads `~/.ssh/config` when connecting. If your profile host matches a `Host` alias, MacSCP applies `HostName`, `Port`, `User`, `IdentityFile`, and `ProxyJump` from that block (profile proxy settings take precedence over config).
+
+In the connection form, set **Proxy → Jump host** to connect through a bastion without editing `~/.ssh/config`. Jump connections use the Traversio backend automatically.
+
+CLI equivalent:
+
+```bash
+macscp-cli open sftp://deploy@production/var/www --rawsettings ProxyJump=jump1,jump2
+```
+
+`ProxyCommand` from OpenSSH config is not supported; use `ProxyJump` or an explicit jump host in the profile instead.
+
+---
+
+## 13. Phase 4 Features
+
+### Multi-session tabs
+
+Use **⌘T** to open a new tab and **⌘W** to close the active tab. Each tab maintains its own connection and remote path.
+
+### Explorer layout
+
+In the connection form, choose **Layout → Explorer** for a single remote tree with integrated local browsing (alternative to dual-pane Commander).
+
+### Integrated SSH pane
+
+When connected, open the embedded SSH command pane from the toolbar to run remote shell commands in-session (distinct from Terminal/iTerm hand-off).
+
+### Bidirectional sync
+
+**Sync Directories** supports mirror local→remote, mirror remote→local, and **bidirectional** compare (upload + download changed files). CLI: `macscp sync --bidirectional`.
+
+### Master password and encrypted export
+
+Optional master password protects encrypted profile export/import. Enable in login **Advanced**; export from the profile menu.
+
+### Proxy settings (UI)
+
+Connection form **Advanced → Proxy**: HTTP CONNECT, SOCKS5, or SSH jump host. Comma-separated hosts define a ProxyJump chain. Overrides are preserved over `~/.ssh/config`.
+
+---
+
+## 14. What's Not in This Release
 
 The following remain **planned** or require distribution signing:
 
 - **Mac App Store** build with full sandbox + notarized release pipeline
-- **ProxyJump** through Citadel (jump hosts use Traversio backend automatically)
+- **ProxyCommand** tunneling (use ProxyJump or profile jump host)
 - **Full WinSCP script parity** (advanced `call`, `.NET`, tunnel UI)
 
 ---
 
-## 14. Getting Help
+## 15. Getting Help
 
 | Resource | Link |
 |---|---|
@@ -532,7 +582,7 @@ The following remain **planned** or require distribution signing:
 
 ---
 
-## 14. Appendix: Sample Workflows
+## 16. Appendix: Sample Workflows
 
 ### Deploy a Single File to Staging
 

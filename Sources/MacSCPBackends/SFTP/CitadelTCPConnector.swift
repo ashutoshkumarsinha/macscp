@@ -2,18 +2,10 @@
 //
 // WHAT THIS FILE DOES
 // -------------------
-// Opens Citadel SSH connections and applies TCP socket tuning (buffer sizes and
-// TCP_NODELAY) based on the session's network profile (from config preset).
+// Opens Citadel SSH connections and applies TCP socket tuning (buffer sizes and TCP_NODELAY)
+// from the session network profile. Citadel's API lacks bootstrap options, so tuning runs on
+// the underlying NIO channel after connect; SessionCoordinator sets networkProfile from config.
 //
-// WHY A SEPARATE FILE
-// -------------------
-// Citadel's public connect API does not expose bootstrap socket options. We connect
-// normally, then adjust the underlying NIO channel before SFTP traffic starts.
-//
-// BEGINNER TIP
-// ------------
-// networkProfile travels on SessionConfiguration, set by SessionCoordinator from
-// the user's preset in config.toml (lan / wan / apple_silicon).
 
 @preconcurrency import Citadel
 import Foundation

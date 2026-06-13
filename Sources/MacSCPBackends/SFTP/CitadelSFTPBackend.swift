@@ -1,7 +1,10 @@
-// CitadelSFTPBackend.swift — Default SFTP backend (NIOSSH via Citadel).
+// CitadelSFTPBackend.swift
 //
-// Used for password and SSH key file authentication. Shares path/upload helpers
-// with TraversioSFTPBackend under SFTP/. Pipelined read/write when config allows.
+// WHAT THIS FILE DOES
+// -------------------
+// Default SFTP backend (NIOSSH via Citadel) for password and SSH key file auth. Shares path
+// and upload helpers with TraversioSFTPBackend; uses pipelined read/write when config allows.
+//
 
 import Citadel
 import Crypto

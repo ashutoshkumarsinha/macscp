@@ -5,18 +5,18 @@ MacSCP uses two SFTP backends:
 | Backend | Library | License | Default use |
 |---|---|---|---|
 | **Citadel** | [orlandos-nl/Citadel](https://github.com/orlandos-nl/Citadel) | MIT | Password and SSH key sessions |
-| **Traversio** | [GitSwiftHQ/Traversio](https://github.com/GitSwiftHQ/Traversio) | **AGPL-3.0** | SSH agent sessions; optional performance mode |
+| **Traversio** | [GitSwiftHQ/Traversio](https://github.com/GitSwiftHQ/Traversio) | **AGPL-3.0** | SSH agent; **HTTP/SOCKS/ProxyJump**; optional performance mode |
 
 ## Policy (as of v0.3)
 
 1. **Citadel remains the default** for password and on-disk key authentication.
-2. **Traversio is used automatically** when `AuthMethod.agent` is selected (SSH agent), because Citadel does not cover agent auth in this project.
-3. **Traversio is opt-in** for key/password sessions via `use_traversio_for_performance = true` in `~/.macscp/config.toml`.
+2. **Traversio is used automatically** when `AuthMethod.agent` is selected, or when any **proxy** is configured (HTTP CONNECT, SOCKS5, SSH ProxyJump), because Citadel does not implement those paths in MacSCP.
+3. **Traversio is opt-in** for plain key/password sessions (no proxy) via `use_traversio_for_performance = true` in `~/.macscp/config.toml`.
 4. **Traversio is not the default for distribution** until AGPL implications are reviewed with counsel for your deployment model (SaaS, internal tool, shipped binary, CI-only, etc.).
 
 ## Why Traversio is included
 
-Benchmarks (`make bench-upload-spike`) show Traversio uploads can exceed Citadel on Apple Silicon. Agent authentication requires Traversio today. The library is linked in all builds because the agent code path and benchmarks depend on it.
+Benchmarks (`make bench-upload-spike`) show Traversio uploads can exceed Citadel on Apple Silicon. Agent authentication and **proxy/ProxyJump** require Traversio today. The library is linked in all builds because those code paths depend on it.
 
 ## User-visible controls
 

@@ -1,4 +1,10 @@
-// InternalEditorService.swift — Download remote text file for in-app editing and re-upload on save.
+// InternalEditorService.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Downloads a remote text file for in-app editing and re-uploads on save. CommanderView
+// opens InternalEditorView; TextFileEncoding handles decode/encode before backend upload.
+//
 
 import Foundation
 import MacSCPCore

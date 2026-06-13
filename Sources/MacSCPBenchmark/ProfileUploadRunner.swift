@@ -1,3 +1,10 @@
+// ProfileUploadRunner.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Benchmarks upload throughput across network presets and emits ProfileUploadReport JSON.
+// The benchmark CLI profile-upload subcommand runs this against a configured host.
+//
 import Foundation
 import MacSCPCore
 import MacSCPBackends

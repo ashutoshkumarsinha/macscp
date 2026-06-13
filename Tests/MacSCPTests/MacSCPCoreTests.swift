@@ -1,3 +1,9 @@
+// MacSCPCoreTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// SessionConfiguration defaults and Checksum.sha256 deterministic hashing behavior.
+//
 import MacSCPCore
 import XCTest
 

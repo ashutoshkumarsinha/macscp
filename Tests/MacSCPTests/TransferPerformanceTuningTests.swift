@@ -1,3 +1,9 @@
+// TransferPerformanceTuningTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// TransferPerformanceTuning network profile mapping from presets and MACSCP_BENCH_NETWORK env.
+//
 import MacSCPCore
 import XCTest
 

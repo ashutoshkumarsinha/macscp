@@ -1,5 +1,9 @@
-// DirectoryTransferPlannerTests.swift — Tests for recursive directory expansion and path join.
-
+// DirectoryTransferPlannerTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// Recursive local directory expansion and remote path joining for batch uploads.
+//
 import Foundation
 import MacSCPCore
 import Testing

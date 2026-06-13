@@ -1,4 +1,10 @@
-// FTPListingParser.swift — Parse MLSD and Unix LIST output into RemoteEntry rows.
+// FTPListingParser.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Parses MLSD and Unix LIST output into RemoteEntry rows. FTPTransferBackend uses this
+// when listing directories over the FTP control and data channels.
+//
 
 import Foundation
 import MacSCPCore

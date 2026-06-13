@@ -14,10 +14,14 @@
 #   MACSCP_BENCH_FULL=1       Full file sizes and 10k small files
 #   MACSCP_BENCH_NETWORK      loopback | lan | wifi | wan (tagged in report hostInfo)
 #   MACSCP_BENCH_HOST/PORT/USER/KEY  Override fixture connection (see BenchmarkConfig)
+#
+# Related: benchmark-env.sh, verify-benchmark-report.sh, Sources/MacSCPBenchmark/
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${ROOT}"
+
+# --- Parse arguments ---
 
 VERIFY=0
 BENCH_ARGS=()
@@ -32,6 +36,8 @@ for arg in "$@"; do
   esac
 done
 
+# --- Start fixture and run benchmarks ---
+
 "${ROOT}/scripts/benchmark-env.sh" start
 
 cleanup() {
@@ -44,6 +50,8 @@ if ((${#BENCH_ARGS[@]} > 0)); then
 else
   swift run macscp-benchmark
 fi
+
+# --- Optional pass-criteria check ---
 
 if [[ "${VERIFY}" -eq 1 ]]; then
   "${ROOT}/scripts/verify-benchmark-report.sh"

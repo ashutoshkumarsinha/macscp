@@ -1,3 +1,10 @@
+// UploadSpikeRunner.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Stress-tests concurrent small-file uploads and records UploadSpikeReport metrics.
+// MacSCPBenchmarkMain upload-spike subcommand drives this for regression spikes.
+//
 import Foundation
 import MacSCPCore
 import MacSCPBackends

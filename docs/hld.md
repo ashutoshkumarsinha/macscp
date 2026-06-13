@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Version | 0.3 |
-| Status | Draft — reflects v0.3 (SFTP MVP + Apple Silicon performance + Phase 1/2 parity features) |
+| Status | Draft — reflects v0.3 (Phases 0–4: SFTP MVP, cloud, parity, OpenSSH/ProxyJump) |
 | Related | [Product spec](spec.md), [TransferBackend](transfer-backend.md), [Apple Silicon performance](apple-silicon-performance.md), [SFTP spike](spikes/sftp-backend-spike.md) |
 
 ---
@@ -49,10 +49,10 @@ MacSCP is a native macOS SFTP client (WinSCP-inspired) built as a Swift 6 packag
 | Dependency | Role |
 |---|---|
 | [Citadel](https://github.com/orlandos-nl/Citadel) | Default SFTP backend for key/password auth (NIOSSH + SFTP v3) |
-| [Traversio](https://github.com/GitSwiftHQ/Traversio) | SFTP backend for SSH agent auth; benchmark/spike comparison |
+| [Traversio](https://github.com/GitSwiftHQ/Traversio) | SFTP/SCP for SSH agent, **proxy sessions**, optional perf mode; ProxyJump via `TraversioSSHConfigurationBuilder` |
 | OpenSSH | Benchmark baseline (`sftp`, `sshd` test fixture) |
 
-**Backend selection:** `SessionCoordinator` uses `SFTPBackendSelector`: Citadel for key/password by default, Traversio for SSH agent or when `use_traversio_for_performance` is set. Connection pool size comes from `TransferPerformanceTuning.effectivePoolSize` (elevated for `apple_silicon` preset on arm64). Each session carries a `TransferNetworkProfile` (from preset) used by `CitadelTCPConnector` for post-connect socket tuning.
+**Backend selection:** `SessionCoordinator` uses `SFTPBackendSelector`: Citadel for key/password by default; Traversio for SSH agent, **any configured proxy** (HTTP, SOCKS5, ProxyJump), or `use_traversio_for_performance`. Before connect, `SessionConfiguration.mergeOpenSSHConfig()` applies matching `~/.ssh/config` Host stanzas (HostName, ProxyJump, etc.). Connection pool size comes from `TransferPerformanceTuning.effectivePoolSize`. Each session carries a `TransferNetworkProfile` (from preset) used by `CitadelTCPConnector` for post-connect socket tuning.
 
 ---
 
@@ -60,14 +60,15 @@ MacSCP is a native macOS SFTP client (WinSCP-inspired) built as a Swift 6 packag
 
 ```text
 Sources/
-  MacSCPCore/         Protocol, session models, config, performance tuning, BenchmarkHostInfo
-  MacSCPBackends/     Citadel/Traversio backends, listing cache, TCP tuning, buffer pool, mmap reads
+  MacSCPCore/         Protocol, session models, config, OpenSSH parser, performance tuning, BenchmarkHostInfo
+  MacSCPBackends/     Citadel/Traversio backends, TraversioSSHConfigurationBuilder, cloud/FTP/WebDAV
   MacSCPUI/           TransferQueue, overwrite batch types (shared by app + tests)
-  MacSCPApp/          SwiftUI executable + coordinators
-    Coordinators/     Profile, Session, LocalPane, RemotePane, Transfer
+  MacSCPApp/          SwiftUI executable + coordinators + tab workspace
+    Coordinators/     Profile, Session, LocalPane, RemotePane, Transfer, Sync, FileOps, SessionTabWorkspace
+  MacSCPCLI/          macscp-cli headless session runner
   MacSCPBenchmark/    macscp-benchmark CLI for throughput spikes
 Tests/
-  MacSCPTests/        Unit + integration tests (82 cases)
+  MacSCPTests/        Unit + integration tests (**138** XCTest + **3** Swift Testing)
 scripts/
   benchmark-env.sh    Local OpenSSH SFTP on :2222
   run-benchmarks.sh   Benchmark runner (--verify optional)
@@ -86,17 +87,19 @@ Makefile              build, test, ci, run, bench, logs, config, paths
 MacSCPApp ──▶ MacSCPUI ──▶ MacSCPBackends ──▶ MacSCPCore
                 │                              ▲
                 └──────────────────────────────┘
+MacSCPCLI ──▶ MacSCPBackends ──▶ MacSCPCore
 MacSCPBenchmark ──▶ MacSCPBackends
 MacSCPTests ──▶ MacSCPCore, MacSCPBackends, MacSCPUI
 ```
 
 | Module | Responsibility |
 |---|---|
-| **MacSCPCore** | `TransferBackend` protocol, `SessionConfiguration`, `TransferOptions`, `TransferCancellation`, `DirectoryTransferPlanner`, `MacSCPConfiguration`, `TransferPerformanceTuning`, `BenchmarkHostInfo`, `StreamingChecksum`, logging |
-| **MacSCPBackends** | SFTP implementations, shared path/upload helpers, pipelined Citadel read/write, listing cache, TCP tuning, buffer pool, mmap local reads, host-key TOFU, agent auth (Traversio) |
+| **MacSCPCore** | `TransferBackend` protocol, `SessionConfiguration`, `OpenSSHConfigParser`, `mergeOpenSSHConfig`, `TransferOptions`, `DirectorySyncEngine`, `MacSCPConfiguration`, `TransferPerformanceTuning`, logging |
+| **MacSCPBackends** | SFTP/SCP/FTP/WebDAV/S3/GCS implementations, `TraversioSSHConfigurationBuilder` (ProxyJump + HTTP/SOCKS), pipelined Citadel I/O, host-key TOFU, agent auth |
 | **MacSCPUI** | Background transfer queue, job state machine, overwrite batch model |
-| **MacSCPApp** | SwiftUI shell, coordinator decomposition, session profiles, commander panes, drag-and-drop |
-| **MacSCPBenchmark** | Automated throughput comparison vs OpenSSH; embeds `BenchmarkHostInfo` from MacSCPCore in JSON reports |
+| **MacSCPApp** | SwiftUI shell, coordinator decomposition, tabs, explorer layout, session profiles, commander panes |
+| **MacSCPCLI** | `macscp-cli` — open/ls/get/put/sync/script with OpenSSH merge on connect |
+| **MacSCPBenchmark** | Automated throughput comparison vs OpenSSH; embeds `BenchmarkHostInfo` in JSON reports |
 
 ---
 
@@ -160,7 +163,9 @@ Thread-safe cancellation token polled by backends during read/write loops and pi
 | Coordinator | Responsibility |
 |---|---|
 | **ProfileCoordinator** | Load/save/delete profiles, `SessionProfileDraft`, Keychain password migration |
-| **SessionCoordinator** | Connect/disconnect, backend lifecycle, remote working path, backend kind selection, pool sizing, network profile on session |
+| **SessionCoordinator** | Connect/disconnect, `mergeOpenSSHConfig`, backend lifecycle, remote working path, backend kind selection, pool sizing |
+| **SessionTabWorkspace** | Multi-session tabs (`⌘T` / `⌘W`), per-tab coordinator state |
+| **SyncCoordinator** | Directory compare, one-way and bidirectional sync plans |
 | **LocalPaneCoordinator** | Local path, entries, selection, navigation |
 | **RemotePaneCoordinator** | Remote entries, selection, refresh |
 | **TransferCoordinator** | Upload/download/drop, directory expansion (local scan on detached task), overwrite batch, queue binding |
@@ -274,7 +279,8 @@ Both Citadel and Traversio backends share:
 | `SFTPErrorHelpers` | Already-exists detection for mkdir |
 | `SFTPListingCache` | 3 s TTL cache for remote directory listings (Citadel + Traversio) |
 | `CitadelTCPConnector` | Post-connect TCP buffer / Nagle tuning for Citadel |
-| `SFTPBackendSelector` | Citadel vs Traversio selection + logging |
+| `SFTPBackendSelector` | Citadel vs Traversio (agent, proxy, perf flag) + logging |
+| `TraversioSSHConfigurationBuilder` | Maps `SessionConfiguration` → Traversio `SSHClientConfiguration` (ProxyJump chain, HTTP/SOCKS) |
 | `LocalFileSequentialReader` | mmap reads for large local files (Citadel upload) |
 | `TransferBufferPool` | Reusable NIO `ByteBuffer` pool |
 | `MacSCPHostKeySupport` | TOFU store at `~/.macscp/known_hosts.json` |
@@ -297,15 +303,42 @@ Both Citadel and Traversio backends share:
 | Cancel | Poll `TransferCancellation` in loops + pipelined I/O |
 | Agent auth | Not supported directly — use Traversio backend |
 
-### 7.3 Traversio (Agent Auth + Benchmarks)
+### 7.3 Traversio (Agent, Proxy, Benchmarks)
 
 - Native `SSHAgentClient` for `SSH_AUTH_SOCK` / ssh-agent identities
+- **ProxyJump**, HTTP CONNECT, and SOCKS5 via `TraversioSSHConfigurationBuilder` + `OpenSSHConfigParser.resolveJumpChain`
 - `uploadFile` / `downloadFile` with built-in concurrent read/write
 - `SFTPListingCache` on remote directory listings (same TTL as Citadel)
-- Selected automatically when profile uses SSH agent authentication
+- Selected automatically when profile uses SSH agent **or any proxy type**, or `use_traversio_for_performance`
 - **AGPL-3.0** — legal review before wide distribution as default backend
 
-### 7.4 Upload/Download Performance Strategy
+### 7.4 OpenSSH Config Merge (`MacSCPCore`)
+
+```text
+Profile host alias (e.g. "production")
+        │
+        ▼
+OpenSSHConfigParser.mergedSettings(forHost:)  ← ~/.ssh/config
+        │
+        ▼
+SessionConfiguration.mergeOpenSSHConfig()
+  • HostName, Port, User, IdentityFile (if profile key path empty)
+  • ProxyJump → advanced.proxyType = .jump (unless profile proxy set)
+        │
+        ▼
+SFTPBackendSelector → Traversio when proxy/jump present
+        │
+        ▼
+TraversioSSHConfigurationBuilder.makeConfiguration()
+  • proxyJumpHosts[] resolved per hop
+  • connectionProxy for HTTP/SOCKS first hop
+```
+
+CLI path: `OpenSSHRawSettings.apply(--rawsettings …)` then `mergeOpenSSHConfig()` before connect.
+
+`ProxyCommand` is parsed but **not** executed (use ProxyJump or profile jump host).
+
+### 7.5 Upload/Download Performance Strategy
 
 See [SFTP backend spike](spikes/sftp-backend-spike.md) for benchmark numbers.
 
@@ -318,7 +351,7 @@ See [SFTP backend spike](spikes/sftp-backend-spike.md) for benchmark numbers.
 7. Remote listing cache (`SFTPListingCache`, 3 s TTL) to reduce repeated `listDirectory` round-trips
 8. NIO buffer reuse (`TransferBufferPool`) on hot upload paths
 
-### 7.5 Transfer Performance Tuning (`MacSCPCore`)
+### 7.6 Transfer Performance Tuning (`MacSCPCore`)
 
 ```text
 config.toml [transfer] preset + overrides
@@ -414,14 +447,13 @@ Pass criteria (spec): ≥ 90% OpenSSH throughput (large files); ≥ 80% (small f
 | `SFTPAttributeMappingTests` | Permission → entry type |
 | `StreamingChecksumTests` | Incremental SHA-256 vs one-shot and file reads |
 | `TransferPerformanceTuningTests` | Presets, TCP buffers, pool sizing, env network profile |
-| `SFTPBackendSelectorTests` | Citadel vs Traversio routing |
-| `SFTPListingCacheTests` | Store, invalidate, TTL expiry |
-| `LocalFileReaderTests` | Small-file reads, mmap path, past-end |
-| `TransferBufferPoolTests` | NIO `ByteBuffer` borrow/recycle |
-| `BenchmarkHostInfoTests` | Host metadata in benchmark JSON |
-| `SFTPErrorHelpersTests` | Already-exists detection |
+| `OpenSSHConfigParserTests` | Config parse, merge, jump chain, raw settings |
+| `TraversioSSHConfigurationBuilderTests` | ProxyJump hops, HTTP/SOCKS proxy mapping |
+| `SFTPBackendSelectorTests` | Citadel vs Traversio routing (agent, proxy, perf flag) |
+| `Phase3FeatureTests` | Cloud URL layout, feature settings |
+| `DirectorySyncEngineTests` | Compare rows, bidirectional plan |
 
-Run: `make test` or `swift test` (**88** XCTest + **3** Swift Testing = **91** total). CI entry point: `make check` (requires Xcode 26 on GitHub Actions for Traversio 6.2).
+Run: `make test` or `swift test` (**138** XCTest + **3** Swift Testing). CI entry point: `make check` (requires Xcode 26 on GitHub Actions for Traversio / Swift 6.2).
 
 ---
 
@@ -446,7 +478,7 @@ Run: `make test` or `swift test` (**88** XCTest + **3** Swift Testing = **91** t
 | CI benchmarks (macos-15, Xcode 26) | 1 | Done |
 | SSH agent auth | 1 | Done (Traversio backend) |
 | AppModel coordinator decomposition | 1 | Done |
-| Directory sync / mirror | 1–2 | Done (one-way) |
+| Directory sync / mirror | 1–4 | Done (one-way + bidirectional) |
 | External remote editor | 1 | Done |
 | Live sync (FSEvents) | 2 | Done |
 | Terminal / iTerm hand-off | 2 | Done |
@@ -455,8 +487,15 @@ Run: `make test` or `swift test` (**88** XCTest + **3** Swift Testing = **91** t
 | CLI (`macscp-cli` → `macscp`) | 1–2 | Done |
 | Internal remote editor | 1 | Done |
 | SCP / FTP / FTPS backends | 2 | Done |
+| WebDAV / S3 / GCS | 3 | Done |
 | Shortcuts + URL scheme | 2 | Done |
-| Tabs | 2+ | Not started |
+| Multi-session tabs | 4 | Done |
+| Explorer layout mode | 4 | Done |
+| Integrated SSH pane | 4 | Done |
+| Proxy (HTTP/SOCKS/Jump) + OpenSSH config | 4 | Done |
+| Master password + encrypted export | 4 | Done |
+| Finder Sync + badges | 3–4 | Done |
+| App Sandbox entitlements variant | 4 | Partial (bookmarks; MAS track open) |
 
 ---
 
@@ -469,7 +508,7 @@ Run: `make test` or `swift test` (**88** XCTest + **3** Swift Testing = **91** t
 | Profile file permissions | `chmod 600` on save | — |
 | App Sandbox | Not enabled (v0.3 direct distribution) | Full sandbox + security-scoped bookmarks for MAS — [security.md](security.md) |
 | Release signing | Hardened runtime + network client entitlements | Notarization automation |
-| AGPL backend | Traversio for agent + opt-in perf; WARN on enable | Counsel review before commercial default — [traversio-licensing.md](traversio-licensing.md) |
+| AGPL backend | Traversio for agent, **proxy**, and opt-in perf; WARN on enable | Counsel review before commercial default — [traversio-licensing.md](traversio-licensing.md) |
 
 ---
 

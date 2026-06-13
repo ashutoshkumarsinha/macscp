@@ -1,4 +1,10 @@
-// SerializingTransferBackend.swift — Actor gate so one SFTP connection is not raced by concurrent jobs.
+// SerializingTransferBackend.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Actor gate so one SFTP connection is not raced by concurrent queue jobs. TransferBackendFactory
+// wraps a single-connection backend when serialized mode is requested.
+//
 
 import Foundation
 import MacSCPCore

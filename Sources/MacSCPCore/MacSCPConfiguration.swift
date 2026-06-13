@@ -1,8 +1,10 @@
 // MacSCPConfiguration.swift
 //
-// Loads and saves ~/.macscp/config.toml (logging + transfer settings).
-// On first launch, creates the file — arm64 Macs get preset = "apple_silicon".
-// See TransferPerformanceTuning.swift for how presets map to numbers.
+// WHAT THIS FILE DOES
+// -------------------
+// Loads and saves ~/.macscp/config.toml (logging and transfer settings). Creates defaults on
+// first launch — arm64 Macs get preset = "apple_silicon"; see TransferPerformanceTuning for preset numbers.
+//
 
 import Foundation
 

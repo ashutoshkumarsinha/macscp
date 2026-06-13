@@ -1,3 +1,10 @@
+// QuickLookPreviewService.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Previews local or downloaded remote files with macOS Quick Look.
+// File pane actions invoke preview for a URL without leaving the transfer UI.
+//
 import AppKit
 import Foundation
 import MacSCPCore

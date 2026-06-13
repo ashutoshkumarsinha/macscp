@@ -1,3 +1,10 @@
+// PaneTransferRules.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Rules for which pane sides may accept drag-and-drop transfers between local and remote.
+// FilePaneSide and pane views call acceptsDrop before enqueueing cross-pane transfers.
+//
 import Foundation
 
 public enum PaneSide: String, Codable, Sendable {

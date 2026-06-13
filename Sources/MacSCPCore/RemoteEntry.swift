@@ -1,4 +1,10 @@
-// RemoteEntry.swift — One row in a remote directory listing (like ls -l output).
+// RemoteEntry.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// One row in a remote directory listing (like ls -l output). EntryType and FilePermissions
+// model remote files for pane views and every backend listDirectory implementation.
+//
 
 import Foundation
 

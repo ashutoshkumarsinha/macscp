@@ -2,18 +2,10 @@
 //
 // WHAT THIS FILE DOES
 // -------------------
-// Remembers remote directory listings for a few seconds so refreshing the remote
-// pane (or debounced refresh after uploads) does not hit the server every time.
+// Short-lived in-memory cache of remote directory listings so pane refresh does not hit the
+// server every time. CitadelSFTPBackend and TraversioSFTPBackend use it in listDirectory(at:)
+// and invalidate after uploads that may change contents.
 //
-// WHO USES IT
-// -----------
-// CitadelSFTPBackend and TraversioSFTPBackend in listDirectory(at:).
-// Invalidated after uploads that may change directory contents.
-//
-// BEGINNER TIP
-// ------------
-// This is an `actor` — only one task uses the cache at a time, which is safe when
-// multiple transfers finish and trigger pane refresh concurrently.
 
 import Foundation
 import MacSCPCore

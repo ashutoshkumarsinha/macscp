@@ -1,3 +1,10 @@
+// FinderSync.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Finder Sync extension: badge for synced folders and context menu to upload via MacSCP.
+// Reads synced folder list and active session from app group UserDefaults (group.com.macscp.app).
+//
 import FinderSync
 
 private enum SharedKeys {

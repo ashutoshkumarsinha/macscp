@@ -1,4 +1,10 @@
-// MacSCPApplication.swift — Custom NSApplication for AppleScript command routing.
+// MacSCPApplication.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Custom NSApplication subclass for AppleScript command routing. NSScriptCommand handlers
+// forward connect, disconnect, upload, and download to MacSCPScriptingController.
+//
 
 import AppKit
 

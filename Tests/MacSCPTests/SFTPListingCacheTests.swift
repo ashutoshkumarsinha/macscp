@@ -1,3 +1,9 @@
+// SFTPListingCacheTests.swift
+//
+// WHAT THIS FILE TESTS
+// --------------------
+// SFTPListingCache store, hit, expiry, and invalidation of remote directory listings.
+//
 import MacSCPCore
 @testable import MacSCPBackends
 import XCTest

@@ -1,3 +1,10 @@
+// S3XMLParser.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Parses S3 ListObjects XML responses into RemoteEntry listings.
+// The S3 backend uses parseListObjects when listing bucket prefixes.
+//
 import Foundation
 import MacSCPCore
 

@@ -1,3 +1,10 @@
+// PaneDragPayload.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Drag-and-drop payload for file panes and drop-target validation helpers.
+// PaneDragPayload crosses panes via SwiftUI Transferable; FilePaneSide wraps PaneTransferRules.
+//
 import CoreTransferable
 import Foundation
 import MacSCPCore

@@ -1,4 +1,10 @@
-// DirectorySyncEngine.swift — Compare local and remote trees for one-way sync.
+// DirectorySyncEngine.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Compares local and remote directory trees for one-way sync. SyncCoordinator and SyncCompareView
+// use SyncCompareRow status to plan upload or download of differing files.
+//
 
 import Foundation
 

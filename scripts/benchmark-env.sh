@@ -19,6 +19,8 @@ RUN="${BENCH_DIR}/run"
 PORT="${MACSCP_BENCH_PORT:-2222}"
 USER_NAME="${MACSCP_BENCH_USER:-$(whoami)}"
 
+# --- Server lifecycle ---
+
 start() {
   mkdir -p "${KEYS}" "${DATA}" "${RUN}"
 
@@ -88,6 +90,8 @@ status() {
   echo "not running"
   exit 1
 }
+
+# --- Command dispatch ---
 
 case "${1:-start}" in
   start) start ;;

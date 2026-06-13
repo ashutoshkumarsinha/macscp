@@ -1,4 +1,10 @@
-// Checksum.swift — SHA-256 helpers to verify file integrity after transfer.
+// Checksum.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// SHA-256 helpers to verify file integrity after transfer. Streams file bytes on disk and
+// returns a 64-char hex string; used when verify_checksums is enabled outside upload pipelines.
+//
 
 import Crypto
 import Foundation

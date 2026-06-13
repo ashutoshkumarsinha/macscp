@@ -2,7 +2,7 @@
 
 This guide explains **how the code is organized** and **how data flows** when you use MacSCP. Read it alongside the source files.
 
-> **Note on comments in source files:** We add comments on important lines and sections, not on every `{` or `}`. Commenting every single line makes code harder to read and is not standard practice—even in teaching projects.
+> **Note on comments in source files:** Each Swift file begins with a `WHAT THIS FILE DOES` header (filename, purpose, key callers). Shell scripts and the Makefile use section headers the same way. We do not comment every line — that would hurt readability.
 
 ---
 
@@ -13,11 +13,16 @@ This guide explains **how the code is organized** and **how data flows** when yo
 | How the app launches | `Sources/MacSCPApp/MacSCPApp.swift` |
 | App state (facade) | `Sources/MacSCPApp/AppModel.swift` |
 | Profile / session / transfer logic | `Sources/MacSCPApp/Coordinators/*.swift` |
+| Multi-session tabs | `Sources/MacSCPApp/Coordinators/SessionTabWorkspace.swift` |
 | Dual-pane UI | `Sources/MacSCPApp/Views/CommanderView.swift` |
-| Login screen | `Sources/MacSCPApp/Views/SessionLoginView.swift` |
+| Login screen + proxy fields | `Sources/MacSCPApp/Views/SessionLoginView.swift` |
+| OpenSSH config merge | `Sources/MacSCPCore/OpenSSHConfigParser.swift`, `SessionConfiguration+OpenSSH.swift` |
+| Traversio ProxyJump wiring | `Sources/MacSCPBackends/SFTP/TraversioSSHConfigurationBuilder.swift` |
 | Background transfers | `Sources/MacSCPUI/TransferQueue.swift` |
 | Directory tree expansion | `Sources/MacSCPCore/DirectoryTransferPlanner.swift` |
+| Bidirectional sync | `Sources/MacSCPCore/DirectorySyncEngine.swift` |
 | Config + logging | `Sources/MacSCPCore/MacSCPConfiguration.swift`, `MacSCPLogger.swift` |
+| CLI entry | `Sources/MacSCPCLI/MacSCPCLIMain.swift`, `CLIActions.swift` |
 | Transfer presets / TCP tuning | `Sources/MacSCPCore/TransferPerformanceTuning.swift` |
 | Apple Silicon performance | [apple-silicon-performance.md](apple-silicon-performance.md) + files in §10 below |
 | “What is SFTP?” contract | `Sources/MacSCPCore/TransferBackend.swift` |
@@ -32,7 +37,8 @@ This guide explains **how the code is organized** and **how data flows** when yo
 MacSCPApp     → SwiftUI screens + coordinators (what the user sees)
 MacSCPUI      → Transfer queue (works without SwiftUI views)
 MacSCPCore    → Shared types and protocols (no UI, no network)
-MacSCPBackends→ Talks to Citadel/Traversio SFTP libraries
+MacSCPBackends→ Talks to Citadel/Traversio SFTP libraries + cloud/FTP backends
+MacSCPCLI     → macscp-cli scriptable client
 MacSCPBenchmark→ Command-line speed tests
 ```
 
@@ -47,76 +53,75 @@ MacSCPBenchmark→ Command-line speed tests
 3. Creates one `AppModel` — facade over coordinators.
 4. `RootView` checks `appModel.isConnected`:
    - `false` → show login
-   - `true` → show commander (dual pane)
+   - `true` → show commander (dual pane) or explorer layout
 5. `.environment(appModel)` passes state to child views.
 
 ---
 
 ## 4. Connect flow
 
-1. User fills login form → `SessionProfileDraft` (auth: key file, password, or SSH agent).
+1. User fills login form → `SessionProfileDraft` (auth: key file, password, SSH agent, optional proxy).
 2. User clicks Login → `AppModel.connect()` → `SessionCoordinator.connect(using:)`.
-3. `configuredSession` copies the transfer **preset** from `config.toml` into `SessionConfiguration.networkProfile` (used for TCP tuning).
+3. `configuredSession` builds `SessionConfiguration`, applies transfer **preset** → `networkProfile`, then **`mergeOpenSSHConfig()`** (reads `~/.ssh/config` for HostName, ProxyJump, etc.).
 4. **Backend selection** (`SFTPBackendSelector`):
-   - **SSH agent** → Traversio (required for `SSH_AUTH_SOCK`)
+   - **SSH agent** → Traversio
+   - **Any proxy** (HTTP, SOCKS5, jump) → Traversio
    - **`use_traversio_for_performance = true`** → Traversio (optional max-throughput mode, AGPL)
-   - **Otherwise** → Citadel (default for key/password)
+   - **Otherwise** → Citadel (default for key/password without proxy)
 5. **Pool size** (`TransferPerformanceTuning.effectivePoolSize`):
    - `apple_silicon` on arm64 → several parallel SSH connections (`PooledTransferBackend`)
    - Otherwise → usually one connection (`max_concurrent_transfers` from config)
 6. `SessionConnectionService.connect` calls `backend.connect(configuration:)`.
    - Citadel path uses `CitadelTCPConnector` (SSH + TCP buffer tuning).
+   - Traversio path uses `TraversioSSHConfigurationBuilder` (ProxyJump hops, HTTP/SOCKS proxy).
 7. On success: `isConnected = true`, `RemotePaneCoordinator.refreshRemote(...)`.
 
 ```text
-Login form → SessionCoordinator → SFTPBackendSelector → PooledTransferBackend?
+Login form → SessionCoordinator → mergeOpenSSHConfig → SFTPBackendSelector → PooledTransferBackend?
                                       ↓
-                              CitadelTCPConnector (TCP tune)
+                              CitadelTCPConnector or TraversioSSHConfigurationBuilder
                                       ↓
-                              SFTP open → commander UI
+                              SFTP open → commander / explorer UI
 ```
 
 ---
 
-## 5. Transfer flow
+## 5. Transfer flow (upload)
 
-1. User selects files/folders and clicks Upload (or drags local → remote).
-2. `TransferCoordinator` expands directories via `DirectoryTransferPlanner` when needed.
-3. Conflict check → may show overwrite sheet (`OverwritePromptView`).
-4. `TransferQueue.enqueueUpload(...)` or `enqueueUploadBatch(...)` adds job(s).
-5. Queue processor picks queued jobs (concurrency from `config.toml` `[transfer]`).
-6. Each job gets a `TransferCancellation` token (for Cancel button).
-7. Calls `backend.upload(...)` with progress callback.
-8. UI updates progress bar from callback on `@MainActor`.
-9. After batch completes, panes refresh (debounced).
+1. User selects local files → clicks Upload (or drag to remote pane).
+2. `TransferCoordinator.enqueueUpload` → if folder, `DirectoryTransferPlanner.expandLocalDirectory` on detached task.
+3. Overwrite conflicts → `OverwritePromptView` if needed.
+4. Jobs enqueued on `TransferQueue` with `TransferOptions` from config.
+5. Queue picks backend from `AppModel` (via `TransferBackendProvider`).
+6. `backend.upload(localURL:remotePath:options:)` — Citadel or Traversio SFTP path.
+7. Progress callbacks update queue UI; cancel via `TransferCancellation`.
 
 ---
 
 ## 6. Coordinator map
 
-`AppModel` forwards state; coordinators own behavior:
-
-| File | Role |
+| Coordinator | Owns |
 |---|---|
-| `ProfileCoordinator.swift` | Profiles JSON, draft, save/delete, Keychain passwords |
-| `SessionCoordinator.swift` | Connect/disconnect, backend instance, backend kind |
-| `LocalPaneCoordinator.swift` | Local path, listing, selection |
-| `RemotePaneCoordinator.swift` | Remote listing, selection, refresh |
-| `TransferCoordinator.swift` | Upload/download/drop, overwrite batch, queue |
+| `ProfileCoordinator` | Saved profiles, draft form, Keychain |
+| `SessionCoordinator` | Connect/disconnect, backend, OpenSSH merge |
+| `SessionTabWorkspace` | Per-tab session state |
+| `LocalPaneCoordinator` | Local path, listing, selection |
+| `RemotePaneCoordinator` | Remote listing, selection, refresh |
+| `TransferCoordinator` | Upload/download/drop, queue binding |
+| `SyncCoordinator` | Directory compare + sync (one-way and bidirectional) |
+| `FileOperationsCoordinator` | Rename, delete, mkdir, chmod |
 
 ---
 
-## 7. Key Swift concepts used
+## 7. Swift concepts used
 
-| Concept | Where | Meaning |
+| Concept | Where | Why |
 |---|---|---|
-| `async` / `await` | Backends, coordinators | Wait for network without freezing UI |
-| `@MainActor` | AppModel, coordinators, TransferQueue | UI state must update on main thread |
 | `@Observable` | AppModel, coordinators | SwiftUI auto-refreshes when properties change |
 | `protocol` | TransferBackend | Interface any SFTP library must implement |
 | `Task { }` | TransferQueue | Run work in background |
 | `Sendable` | Core types | Safe to pass between threads |
-| `actor` | SFTPListingCache | One task at a time inside the cache |
+| `actor` | SFTPListingCache, CLISessionStore | One task at a time inside the cache/store |
 | `Task.detached` | TransferCoordinator | Heavy directory scan off main thread |
 
 ---
@@ -130,12 +135,13 @@ Both `CitadelSFTPBackend` and `TraversioSFTPBackend` use:
 - `SFTPListingCache` — 3 s cache for remote directory listings (both backends)
 - `SFTPUploadPlanner` — parent dir + file size
 - `SFTPBatchUploadExecutor` — parallel file uploads
+- `TraversioSSHConfigurationBuilder` — Traversio-only: auth, host key policy, ProxyJump, HTTP/SOCKS
 - `CitadelPipelinedWriter` / `CitadelPipelinedReader` — Citadel-only pipelined I/O
 - `LocalFileSequentialReader` — mmap reads for large local files (Citadel upload)
 - `TransferBufferPool` — reuse NIO buffers between chunks
 - `StreamingSHA256` — checksum while uploading (optional, config flag)
 - `CitadelTCPConnector` — Citadel-only TCP socket tuning after connect
-- `SFTPBackendSelector` — Citadel vs Traversio choice (used by app, not inside backends)
+- `SFTPBackendSelector` — Citadel vs Traversio choice (used by app + CLI, not inside backends)
 
 ---
 
@@ -173,7 +179,7 @@ See [apple-silicon-performance.md](apple-silicon-performance.md) for benchmarks 
 
 ```bash
 make build    # compile
-make test     # 53 tests (50 XCTest + 3 Swift Testing)
+make test     # 138 XCTest + 3 Swift Testing
 make check    # build + test
 make ci         # check + bench-verify (matches GitHub Actions)
 make run      # start test server + open app
@@ -182,7 +188,7 @@ make logs     # tail today's log
 make bench-verify
 ```
 
-Tests live in `Tests/MacSCPTests/` — read them to see expected behavior.
+Tests live in `Tests/MacSCPTests/` — read them to see expected behavior. Notable suites: `OpenSSHConfigParserTests`, `TraversioSSHConfigurationBuilderTests`, `DirectorySyncEngineTests`.
 
 Local SFTP fixture: `./scripts/benchmark-env.sh start` (port 2222, keys in `.benchmark/keys/`).
 

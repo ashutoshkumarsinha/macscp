@@ -1,4 +1,10 @@
-// SFTPDirectoryCache.swift — Session-scoped cache of remote dirs already mkdir'd.
+// SFTPDirectoryCache.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Session-scoped cache of remote directories already mkdir'd to skip redundant SFTP round-trips.
+// CitadelSFTPBackend and TraversioSFTPBackend check the cache before creating parent paths.
+//
 
 import Foundation
 

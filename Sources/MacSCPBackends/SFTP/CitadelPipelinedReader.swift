@@ -1,4 +1,10 @@
-// CitadelPipelinedReader.swift — Read-ahead SFTP downloads (one outstanding READ per handle).
+// CitadelPipelinedReader.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Read-ahead SFTP downloads with one outstanding READ per handle. CitadelSFTPBackend overlaps
+// the next SFTP READ with local disk writes when pipelining is enabled in config.
+//
 
 import Citadel
 import Foundation

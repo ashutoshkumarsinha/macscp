@@ -1,8 +1,22 @@
 #!/usr/bin/env bash
 # Run the macscp CLI from the current build tree (debug or release).
+#
+# Resolves the first existing macscp-cli binary under .build/ so you can invoke
+# the CLI without installing to /usr/local/bin.
+#
+# Used by: make macscp
+#
+# Usage:
+#   ./scripts/macscp [args…]
+#   make macscp ARGS="connect myhost"
+#
+# Related: make cli, docs/cli-reference.md, Sources/MacSCPCLI/
 set -euo pipefail
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ARCH="$(uname -m)"
+
+# Prefer debug build (typical dev workflow); fall back to release if present.
 for candidate in \
   "${ROOT}/.build/debug/macscp-cli" \
   "${ROOT}/.build/${ARCH}-apple-macosx/debug/macscp-cli" \

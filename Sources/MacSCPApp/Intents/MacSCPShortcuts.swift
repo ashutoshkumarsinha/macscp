@@ -1,4 +1,10 @@
-// MacSCPShortcuts.swift — Shortcuts / App Intents actions for automation.
+// MacSCPShortcuts.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Shortcuts and App Intents actions for automation (connect, upload, download). Each intent
+// delegates to ShortcutsBridge for shared entry points with URL handlers and scripting.
+//
 
 import AppIntents
 import Foundation

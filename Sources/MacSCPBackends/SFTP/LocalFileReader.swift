@@ -2,17 +2,9 @@
 //
 // WHAT THIS FILE DOES
 // -------------------
-// Reads local file bytes sequentially for Citadel uploads. Large files use memory-
-// mapping (mmap) so the kernel maps file pages directly instead of copying into RAM.
+// Reads local file bytes sequentially for Citadel uploads; large files use mmap instead of
+// copying into RAM. CitadelPipelinedWriter and CitadelSFTPBackend call LocalFileSequentialReader.
 //
-// WHO USES IT
-// -----------
-// CitadelPipelinedWriter and CitadelSFTPBackend sequential upload path.
-//
-// BEGINNER TIP
-// ------------
-// Files under 256 KB use a normal FileHandle — mmap overhead is not worth it for
-// tiny files. F_RDADVISE tells macOS we read sequentially (better read-ahead).
 
 import Foundation
 

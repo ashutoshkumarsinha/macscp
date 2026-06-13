@@ -1,4 +1,10 @@
-// LocalPaneCoordinator.swift — Local filesystem pane state and navigation.
+// LocalPaneCoordinator.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Local filesystem pane state and navigation. AppModel owns LocalPaneCoordinator and
+// refreshes home-directory listings off the main actor for large folders.
+//
 
 import Foundation
 import Observation

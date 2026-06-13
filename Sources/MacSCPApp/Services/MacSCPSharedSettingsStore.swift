@@ -1,3 +1,10 @@
+// MacSCPSharedSettingsStore.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Reads and writes settings shared between the app and CLI via app-group UserDefaults.
+// Used when syncing transfer presets and feature flags across MacSCP processes.
+//
 import Foundation
 import MacSCPCore
 
