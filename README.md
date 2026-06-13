@@ -1,24 +1,25 @@
 # MacSCP
 
-Open-source, WinSCP-inspired SFTP client for macOS. Phase 1 developer preview: dual-pane commander, transfer queue, recursive directory transfers, SSH agent auth, Apple Silicon performance tuning, and configurable logging.
+Open-source, WinSCP-inspired SFTP client for macOS (**v0.3** developer preview). dual-pane commander, transfer queue, directory sync, file operations, host key prompts, external remote editor, live sync, Touch ID lock, terminal hand-off, Quick Look, SSH agent auth, Apple Silicon performance tuning, `macscp` CLI, and configurable logging.
 
 ## Requirements
 
 - macOS 15+
-- Swift 6.0+
+- Swift 6.2+ (Xcode 26+ on CI; Xcode 16.4+ may work locally with Xcode 26 selected)
 - OpenSSH (`/usr/sbin/sshd`, `/usr/bin/sftp`) for integration benchmarks
 
 ## Package layout
 
 ```text
 Sources/
-  MacSCPCore/         Models, TransferBackend protocol, config, performance tuning, BenchmarkHostInfo
+  MacSCPCore/         Models, TransferBackend protocol, config, sync engine, host key gate
   MacSCPBackends/     Citadel + Traversio SFTP backends, listing cache, TCP tuning, buffer pool
   MacSCPUI/           Transfer queue, overwrite batch types
-  MacSCPApp/          SwiftUI app + coordinators (profile, session, panes, transfers)
+  MacSCPApp/          SwiftUI app + coordinators (profile, session, panes, transfers, sync)
+  MacSCPCLI/          macscp-cli scriptable SFTP client (installed as macscp)
   MacSCPBenchmark/    macscp-benchmark CLI (throughput vs OpenSSH)
 Tests/
-  MacSCPTests/        82 tests (79 XCTest + 3 Swift Testing)
+  MacSCPTests/        91 tests (88 XCTest + 3 Swift Testing)
 scripts/
   benchmark-env.sh    Local OpenSSH SFTP server on port 2222
   run-benchmarks.sh   Start server + run benchmarks (--verify optional)
@@ -26,17 +27,19 @@ scripts/
   ci-local.sh         Local mirror of GitHub Actions CI
   generate-app-icon.sh
   package-dmg.sh
+packaging/homebrew/   Cask (GUI) + Formula (CLI) templates
 .github/workflows/
-  ci.yml              Tests + Apple Silicon benchmarks on macos-15
+  ci.yml              Tests + Apple Silicon benchmarks on macos-15 (Xcode 26)
 ```
 
 ## Build & test
 
 ```bash
 make build
-make test      # 82 tests (79 XCTest + 3 Swift Testing)
+make test      # 91 tests (88 XCTest + 3 Swift Testing)
 make check     # build + test (CI-friendly)
 make ci        # check + bench-apple-silicon + verify pass criteria
+make cli       # build macscp-cli product
 ```
 
 Or directly:
@@ -44,7 +47,10 @@ Or directly:
 ```bash
 swift build
 swift test
+swift run macscp-cli --help
 ```
+
+> **Note:** The CLI Swift product is named `macscp-cli` because `MacSCP` and `macscp` collide on case-insensitive macOS build outputs. `make package-cli` installs the binary as `/usr/local/bin/macscp`.
 
 ## Run the app
 
@@ -57,11 +63,24 @@ swift run MacSCP
 
 Default sample profile connects to `127.0.0.1:2222` with `.benchmark/keys/client_key`.
 
-**Commander:** select files or folders, then **Upload** (⇧⌘U) or **Download** (⇧⌘D). Drag between panes for the same. Progress appears in the transfer queue; pause/resume/cancel from there.
+**Commander:** select files or folders, then **Upload** (⇧⌘U) or **Download** (⇧⌘D). Drag between panes for the same. Use the toolbar for **Sync**, **Terminal**, and **Live Sync**. Right-click entries for rename, delete, properties, Quick Look, and edit.
 
-**Authentication:** SSH key file, password (Keychain), or SSH agent (`SSH_AUTH_SOCK`). Agent sessions use the Traversio backend; key/password use Citadel by default.
+**Authentication:** SSH key file, password (Keychain), or SSH agent (`SSH_AUTH_SOCK`). Agent sessions use the Traversio backend; key/password use Citadel by default. See [Traversio licensing policy](docs/traversio-licensing.md).
 
 **Configuration:** `~/.macscp/config.toml` (logging + transfer tuning). Presets: `default`, `lan`, `wan`, `apple_silicon`. On first launch on Apple Silicon, new configs default to `preset = "apple_silicon"`. Logs: `~/.macscp/logs/`. See `make paths` and `make config`.
+
+## CLI
+
+```bash
+make cli
+./scripts/macscp --help
+./scripts/macscp open sftp://user@host/path --batch
+make package-cli   # sudo: install as /usr/local/bin/macscp
+```
+
+The release `.app` bundle also includes `Contents/MacOS/macscp` (see `make package-dmg`).
+
+Swift product name is **`macscp-cli`** (avoids case collision with `MacSCP` on macOS build paths).
 
 ## Development helpers
 
@@ -117,7 +136,7 @@ Verify pass criteria locally (same check as CI):
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) runs on `macos-15` (Apple Silicon):
+GitHub Actions (`.github/workflows/ci.yml`) runs on `macos-15` (Apple Silicon) with **Xcode 26** (Swift 6.2+ for Traversio):
 
 - `make check` — build + unit tests
 - `make bench-apple-silicon` + `./scripts/verify-benchmark-report.sh`
@@ -132,14 +151,16 @@ Local equivalent:
 
 See [Apple Silicon Performance Guide](docs/apple-silicon-performance.md) for presets and tuning.
 
-## Package DMG
+## Distribution
 
 ```bash
 make icon          # square crop + asset catalog + AppIcon.icns
-make package-dmg   # release build → MacSCP.app → dist/MacSCP-0.1.0.dmg
+make package-dmg   # release build → MacSCP.app → dist/MacSCP-0.3.0.dmg
+brew install --cask ./packaging/homebrew/Casks/macscp.rb
+brew install ./packaging/homebrew/Formula/macscp-cli.rb
 ```
 
-See [docs/packaging.md](docs/packaging.md) for signing and environment variables.
+See [docs/packaging.md](docs/packaging.md) and [packaging/homebrew/README.md](packaging/homebrew/README.md) for signing, Homebrew tap, and release checklist.
 
 ## Docs
 
@@ -148,6 +169,8 @@ See [docs/README.md](docs/README.md):
 - [Product specification](docs/spec.md) (v0.3)
 - [High-level design (HLD)](docs/hld.md)
 - [User guide](docs/user-guide.md)
+- [CLI reference](docs/cli-reference.md)
+- [Traversio licensing policy](docs/traversio-licensing.md)
+- [Security & distribution](docs/security.md)
 - [Code walkthrough](docs/code-walkthrough.md) — includes §9 performance file tour
 - [Apple Silicon performance](docs/apple-silicon-performance.md)
-- SFTP backend spike and CLI reference (planned CLI)

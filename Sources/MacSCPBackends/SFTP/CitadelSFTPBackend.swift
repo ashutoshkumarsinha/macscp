@@ -294,33 +294,19 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
 
         let bytesWritten: Int64
         do {
-            if options.maxConcurrentWrites > 1 {
-                bytesWritten = try await CitadelPipelinedWriter.upload(
-                    file: file,
-                    localURL: localURL,
-                    totalSize: totalSize,
-                    startOffset: offset,
-                    chunkSize: chunkSize,
-                    transferID: transferID,
-                    remotePath: resolved,
-                    progress: options.progress,
-                    cancellation: options.cancellation,
-                    checksum: streamingChecksum
-                )
-            } else {
-                bytesWritten = try await uploadLargeFileSequential(
-                    file: file,
-                    localURL: localURL,
-                    totalSize: totalSize,
-                    startOffset: offset,
-                    chunkSize: chunkSize,
-                    transferID: transferID,
-                    resolved: resolved,
-                    resumedFrom: resumedFrom,
-                    options: options,
-                    checksum: streamingChecksum
-                )
-            }
+            bytesWritten = try await CitadelPipelinedWriter.upload(
+                file: file,
+                localURL: localURL,
+                totalSize: totalSize,
+                startOffset: offset,
+                chunkSize: chunkSize,
+                maxConcurrentWrites: max(options.maxConcurrentWrites, 1),
+                transferID: transferID,
+                remotePath: resolved,
+                progress: options.progress,
+                cancellation: options.cancellation,
+                checksum: streamingChecksum
+            )
         } catch {
             try? await file.close()
             throw error

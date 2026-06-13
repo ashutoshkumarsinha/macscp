@@ -1,11 +1,11 @@
-// CitadelPipelinedWriter.swift — Read-ahead local disk reads while writing SFTP chunks.
+// CitadelPipelinedWriter.swift — Overlapped local reads and sliding-window SFTP writes.
 
 import Citadel
 import Foundation
 import MacSCPCore
 import NIO
 
-/// Overlaps reading the next local chunk with writing the current chunk to SFTP.
+/// Overlaps disk read-ahead with up to `maxConcurrentWrites` in-flight SFTP WRITE requests.
 enum CitadelPipelinedWriter {
     private final class WriteCoordinator: @unchecked Sendable {
         let file: SFTPFile
@@ -25,6 +25,7 @@ enum CitadelPipelinedWriter {
         totalSize: Int,
         startOffset: UInt64,
         chunkSize: Int,
+        maxConcurrentWrites: Int,
         transferID: UUID,
         remotePath: String,
         progress: ProgressHandler?,
@@ -34,8 +35,10 @@ enum CitadelPipelinedWriter {
         let coordinator = WriteCoordinator(file: file)
         let reader = try LocalFileSequentialReader(url: localURL)
         let readChunkSize = max(chunkSize, 256 * 1024)
+        let window = max(1, maxConcurrentWrites)
         var offset = startOffset
-        var prefetch: Task<Data, Error>?
+        var readPrefetch: Task<Data, Error>?
+        var writeTasks: [Task<Void, Error>] = []
         let startTime = Date()
 
         func reportProgress() {
@@ -54,7 +57,20 @@ enum CitadelPipelinedWriter {
             )
         }
 
-        defer { prefetch?.cancel() }
+        func drainOneWrite() async throws {
+            guard !writeTasks.isEmpty else { return }
+            let task = writeTasks.removeFirst()
+            do {
+                try await task.value
+            } catch is CancellationError {
+                throw BackendError.cancelled
+            }
+        }
+
+        defer {
+            readPrefetch?.cancel()
+            writeTasks.forEach { $0.cancel() }
+        }
 
         while offset < UInt64(totalSize) {
             if cancellation?.isCancelled == true || Task.isCancelled {
@@ -63,9 +79,9 @@ enum CitadelPipelinedWriter {
             try cancellation?.throwIfCancelled()
 
             let data: Data
-            if let prefetch {
+            if let readPrefetch {
                 do {
-                    data = try await prefetch.value
+                    data = try await readPrefetch.value
                 } catch is CancellationError {
                     throw BackendError.cancelled
                 }
@@ -78,24 +94,35 @@ enum CitadelPipelinedWriter {
 
             checksum?.update(data)
 
+            while writeTasks.count >= window {
+                try await drainOneWrite()
+            }
+
+            let writeOffset = offset
             var buffer = TransferBufferPool.borrow(capacity: data.count)
             buffer.writeBytes(data)
-            try await coordinator.write(buffer, at: offset)
-            TransferBufferPool.recycle(buffer)
+            writeTasks.append(Task {
+                try await coordinator.write(buffer, at: writeOffset)
+                TransferBufferPool.recycle(buffer)
+            })
 
             offset += UInt64(data.count)
             reportProgress()
 
-            prefetch?.cancel()
+            readPrefetch?.cancel()
             if offset < UInt64(totalSize) {
                 let nextOffset = Int(offset)
                 let nextLength = min(readChunkSize, totalSize - nextOffset)
-                prefetch = Task {
+                readPrefetch = Task {
                     try reader.read(from: nextOffset, count: nextLength)
                 }
             } else {
-                prefetch = nil
+                readPrefetch = nil
             }
+        }
+
+        while !writeTasks.isEmpty {
+            try await drainOneWrite()
         }
 
         return Int64(offset - startOffset)

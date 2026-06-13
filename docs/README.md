@@ -11,7 +11,9 @@ Design and implementation references for the MacSCP project. All documents align
 | [Packaging Guide](packaging.md) | DMG, App Icon catalog, code signing |
 | [SFTP Backend Spike](spikes/sftp-backend-spike.md) | Evaluation of Swift SFTP/SSH libraries; recommended backend choice |
 | [Benchmark Results](../.benchmark/benchmark-results/report.json) | Latest `macscp-benchmark` JSON output (generated) |
-| [CLI Reference](cli-reference.md) | `macscp` command-line tool: commands, flags, exit codes, JSON output |
+| [CLI Reference](cli-reference.md) | `macscp-cli` command-line tool (installed as `macscp`) |
+| [Traversio licensing](traversio-licensing.md) | AGPL policy for the optional Traversio backend |
+| [Security & distribution](security.md) | Sandbox roadmap, entitlements, signing, credentials |
 | [Scripting Guide](scripting.md) | `.macscp` script format and WinSCP command mapping |
 | [TransferBackend Protocol](transfer-backend.md) | Shared abstraction all protocol backends implement |
 | [Apple Silicon Performance](apple-silicon-performance.md) | arm64 tuning, `apple_silicon` preset, benchmarks, CI |
@@ -19,7 +21,7 @@ Design and implementation references for the MacSCP project. All documents align
 ## Quick commands
 
 ```bash
-make build test   # compile + 82 tests
+make build test   # compile + 91 tests
 make run          # local SFTP fixture + launch app
 make paths        # ~/.macscp paths, profiles, known hosts
 make bench                 # SFTP throughput benchmarks

@@ -19,7 +19,7 @@ cd "${ROOT}"
 
 APP_NAME="MacSCP"
 BUNDLE_ID="${MACSCP_BUNDLE_ID:-com.macscp.app}"
-SHORT_VERSION="${MACSCP_SHORT_VERSION:-0.1.0}"
+SHORT_VERSION="${MACSCP_SHORT_VERSION:-0.3.0}"
 BUILD_VERSION="${MACSCP_BUILD_VERSION:-${SHORT_VERSION}}"
 SIGN_IDENTITY="${MACSCP_SIGN_IDENTITY:-}"
 SKIP_SIGN="${MACSCP_SKIP_SIGN:-0}"
@@ -30,16 +30,25 @@ DIST_DIR="${ROOT}/dist"
 DMG_NAME="${APP_NAME}-${SHORT_VERSION}.dmg"
 DMG_PATH="${DIST_DIR}/${DMG_NAME}"
 
-echo "==> Building release binary"
+echo "==> Building release binaries"
 swift build -c release --product "${APP_NAME}"
+swift build -c release --product macscp-cli
 
 ARCH="$(uname -m)"
 RELEASE_BIN="${ROOT}/.build/release/${APP_NAME}"
+CLI_BIN="${ROOT}/.build/release/macscp-cli"
 if [[ ! -x "${RELEASE_BIN}" ]]; then
   RELEASE_BIN="${ROOT}/.build/${ARCH}-apple-macosx/release/${APP_NAME}"
 fi
+if [[ ! -x "${CLI_BIN}" ]]; then
+  CLI_BIN="${ROOT}/.build/${ARCH}-apple-macosx/release/macscp-cli"
+fi
 if [[ ! -x "${RELEASE_BIN}" ]]; then
   echo "Release binary not found for ${APP_NAME}" >&2
+  exit 1
+fi
+if [[ ! -x "${CLI_BIN}" ]]; then
+  echo "Release binary not found for macscp-cli" >&2
   exit 1
 fi
 
@@ -53,7 +62,8 @@ mkdir -p "${APP_DIR}/Contents/MacOS"
 mkdir -p "${APP_DIR}/Contents/Resources"
 
 cp "${RELEASE_BIN}" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
-chmod +x "${APP_DIR}/Contents/MacOS/${APP_NAME}"
+cp "${CLI_BIN}" "${APP_DIR}/Contents/MacOS/macscp"
+chmod +x "${APP_DIR}/Contents/MacOS/${APP_NAME}" "${APP_DIR}/Contents/MacOS/macscp"
 cp "${ICNS}" "${APP_DIR}/Contents/Resources/AppIcon.icns"
 
 if command -v xcrun >/dev/null 2>&1 && xcrun actool --help >/dev/null 2>&1; then
@@ -82,14 +92,18 @@ sed \
   "${ROOT}/packaging/Info.plist" > "${INFO_PLIST}"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${BUNDLE_ID}" "${INFO_PLIST}" 2>/dev/null || true
 cp "${INFO_PLIST}" "${APP_DIR}/Contents/Info.plist"
+cp "${ROOT}/NOTICE" "${APP_DIR}/Contents/Resources/NOTICE"
 
 if [[ "${SKIP_SIGN}" != "1" ]]; then
+  ENTITLEMENTS="${ROOT}/packaging/MacSCP.entitlements"
   if [[ -n "${SIGN_IDENTITY}" ]]; then
     echo "==> Code signing with: ${SIGN_IDENTITY}"
     codesign --force --deep --options runtime --timestamp \
+      --entitlements "${ENTITLEMENTS}" \
       --sign "${SIGN_IDENTITY}" \
       "${APP_DIR}/Contents/MacOS/${APP_NAME}"
     codesign --force --deep --options runtime --timestamp \
+      --entitlements "${ENTITLEMENTS}" \
       --sign "${SIGN_IDENTITY}" \
       "${APP_DIR}"
   else

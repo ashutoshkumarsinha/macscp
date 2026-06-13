@@ -152,6 +152,7 @@ final class AppModel: TransferBackendProvider {
         }
 
         transfers.bind(backendProvider: self)
+        Task { await HostKeyTrustGate.shared.setMode(.interactive) }
         Task { await refreshLocal() }
         MacSCPLogger.shared.info("MacSCP started (profiles: \(profiles.count))", category: .app)
     }

@@ -8,7 +8,12 @@ enum CLIActions {
         if batch {
             await HostKeyTrustGate.shared.setMode(.batchStrict)
         }
-        let parsed = try CLIParser.parseURL(url)
+        let parsed: SFTPConnectionURL
+        do {
+            parsed = try SFTPConnectionURL.parse(url)
+        } catch {
+            throw CLIError.usage("Expected sftp://user@host/path URL")
+        }
         var auth = parsed.authMethod
         if agent { auth = .agent }
         let config = CLISessionBuilder.configuration(
@@ -86,38 +91,6 @@ enum CLIActions {
             }
         }
         print("Synchronized \(files.count) file(s)")
-    }
-}
-
-enum CLIParser {
-    struct ParsedURL {
-        var host: String
-        var port: Int
-        var username: String
-        var password: String?
-        var keyPath: String?
-        var path: String
-        var authMethod: AuthMethod
-    }
-
-    static func parseURL(_ raw: String) throws -> ParsedURL {
-        guard let components = URLComponents(string: raw), components.scheme == "sftp" else {
-            throw CLIError.usage("Expected sftp://user@host/path URL")
-        }
-        let host = components.host ?? "localhost"
-        let port = components.port ?? 22
-        let user = components.user ?? NSUserName()
-        let password = components.password
-        let path = components.path.isEmpty ? "/" : components.path
-        return ParsedURL(
-            host: host,
-            port: port,
-            username: user,
-            password: password,
-            keyPath: nil,
-            path: path,
-            authMethod: password == nil ? .publicKey : .password
-        )
     }
 }
 

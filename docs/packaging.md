@@ -9,7 +9,7 @@ Build a signed (or ad-hoc) `MacSCP.app` and `.dmg` installer from the Swift pack
 ```bash
 make icon
 make package-dmg
-open dist/MacSCP-0.1.0.dmg
+open dist/MacSCP-0.3.0.dmg
 ```
 
 ---
@@ -44,11 +44,13 @@ Open `packaging/MacSCP.xcassets` in Xcode to preview the App Icon set.
 ```text
 build/MacSCP.app/
   Contents/
-    Info.plist              ← from packaging/Info.plist (version substituted)
-    MacOS/MacSCP            ← release binary from swift build -c release
+    Info.plist
+    MacOS/MacSCP            ← GUI
+    MacOS/macscp              ← CLI (same release build as macscp-cli)
     Resources/
-      AppIcon.icns          ← dock / Finder icon
-      Assets.car            ← optional, from actool if Xcode CLT available
+      AppIcon.icns
+      NOTICE
+      Assets.car            ← optional
 ```
 
 ---
@@ -56,7 +58,7 @@ build/MacSCP.app/
 ## DMG layout
 
 ```text
-dist/MacSCP-0.1.0.dmg
+dist/MacSCP-0.3.0.dmg
   MacSCP.app
   Applications → /Applications
 ```
@@ -72,6 +74,8 @@ Created with `hdiutil create -format UDZO`.
 | `MACSCP_SIGN_IDENTITY` | _(empty)_ | e.g. `Developer ID Application: …` |
 | `MACSCP_SKIP_SIGN` | `0` | Set to `1` to skip signing entirely |
 
+Entitlements: `packaging/MacSCP.entitlements` (`network.client` for SFTP; no App Sandbox in v0.3).
+
 When identity is set, the script signs the binary and app bundle with `--options runtime` (hardened runtime). The DMG is signed if identity is provided.
 
 Without identity, ad-hoc signing (`codesign -s -`) is attempted for local testing.
@@ -82,7 +86,7 @@ Without identity, ad-hoc signing (`codesign -s -`) is attempted for local testin
 
 | Variable | Default |
 |---|---|
-| `MACSCP_SHORT_VERSION` | `0.1.0` |
+| `MACSCP_SHORT_VERSION` | `0.3.0` |
 | `MACSCP_BUILD_VERSION` | same as short version |
 | `MACSCP_BUNDLE_ID` | `com.macscp.app` |
 
@@ -109,7 +113,28 @@ MACSCP_SHORT_VERSION=0.2.0 MACSCP_BUILD_VERSION=42 make package-dmg
 | `iconutil: Invalid Iconset` | Re-run `make icon`; ensure no extra files in `build/AppIcon.iconset/` |
 | App has generic icon | Confirm `AppIcon.icns` exists in `Contents/Resources/` and `CFBundleIconFile` is `AppIcon` |
 | Gatekeeper blocks app | Sign with Developer ID + notarize (not yet automated) |
+| Missing NOTICE in app | Re-run `make package-dmg`; `NOTICE` is copied to `Contents/Resources/` |
 
 ---
 
-*Related: [user-guide.md](user-guide.md), [hld.md](hld.md)*
+## Homebrew
+
+Templates for a project tap live under `packaging/homebrew/`:
+
+| File | Purpose |
+|---|---|
+| `Casks/macscp.rb` | Installs `MacSCP.app` from `dist/MacSCP-<version>.dmg` |
+| `Formula/macscp-cli.rb` | Builds `macscp-cli` and installs `macscp` in `/opt/homebrew/bin` |
+| `README.md` | Tap usage, local cask install, release checklist |
+
+```bash
+make package-dmg
+brew install --cask ./packaging/homebrew/Casks/macscp.rb
+brew install ./packaging/homebrew/Formula/macscp-cli.rb
+```
+
+Update the cask `sha256` and `url` when publishing GitHub releases.
+
+---
+
+*Related: [user-guide.md](user-guide.md), [hld.md](hld.md), [traversio-licensing.md](traversio-licensing.md)*

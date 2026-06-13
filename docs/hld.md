@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Version | 0.3 |
-| Status | Draft — reflects Phase 0–1 implementation (SFTP MVP + Apple Silicon performance) |
+| Status | Draft — reflects v0.3 (SFTP MVP + Apple Silicon performance + Phase 1/2 parity features) |
 | Related | [Product spec](spec.md), [TransferBackend](transfer-backend.md), [Apple Silicon performance](apple-silicon-performance.md), [SFTP spike](spikes/sftp-backend-spike.md) |
 
 ---
@@ -421,7 +421,7 @@ Pass criteria (spec): ≥ 90% OpenSSH throughput (large files); ≥ 80% (small f
 | `BenchmarkHostInfoTests` | Host metadata in benchmark JSON |
 | `SFTPErrorHelpersTests` | Already-exists detection |
 
-Run: `make test` or `swift test` (**79** XCTest + **3** Swift Testing = **82** total). CI entry point: `make check`.
+Run: `make test` or `swift test` (**88** XCTest + **3** Swift Testing = **91** total). CI entry point: `make check` (requires Xcode 26 on GitHub Actions for Traversio 6.2).
 
 ---
 
@@ -438,16 +438,23 @@ Run: `make test` or `swift test` (**79** XCTest + **3** Swift Testing = **82** t
 | Drag-and-drop (files + folders) | 1 | Done |
 | Overwrite prompts | 1 | Done |
 | Keychain passwords | 1 | Done |
-| Host key TOFU store | 1 | Done (prompt UI pending) |
+| Host key TOFU store | 1 | Done |
+| Host key prompt UI | 1 | Done |
+| File ops (rename/mkdir/delete/chmod) | 1 | Done |
 | Configurable logging + transfer tuning | 1 | Done |
 | Apple Silicon preset + performance layer | 1 | Done |
-| CI benchmarks (macos-15) | 1 | Done |
+| CI benchmarks (macos-15, Xcode 26) | 1 | Done |
 | SSH agent auth | 1 | Done (Traversio backend) |
 | AppModel coordinator decomposition | 1 | Done |
-| Directory sync / mirror | 2 | Not started |
-| Remote editor | 2 | Not started |
-| CLI (`macscp`) | 2 | Spec only |
-| Tabs, Quick Look | 2+ | Not started |
+| Directory sync / mirror | 1–2 | Done (one-way) |
+| External remote editor | 1 | Done |
+| Live sync (FSEvents) | 2 | Done |
+| Terminal / iTerm hand-off | 2 | Done |
+| Quick Look preview | 2 | Done |
+| Touch ID session lock | 2 | Done |
+| CLI (`macscp-cli` → `macscp`) | 1–2 | Done |
+| Internal remote editor | 1 | Not started |
+| Tabs | 2+ | Not started |
 
 ---
 
@@ -455,11 +462,12 @@ Run: `make test` or `swift test` (**79** XCTest + **3** Swift Testing = **82** t
 
 | Topic | Current | Target |
 |---|---|---|
-| Host key verification | TOFU JSON store + optional fingerprint pin | User prompt UI |
+| Host key verification | TOFU JSON store + prompt UI + optional fingerprint pin | — |
 | Credentials | Keychain for passwords; key paths in profile JSON | Passphrase in Keychain |
 | Profile file permissions | `chmod 600` on save | — |
-| App Sandbox | Not enabled | Security-scoped bookmarks |
-| AGPL backend | Traversio for agent + benchmarks | Legal review before default ship |
+| App Sandbox | Not enabled (v0.3 direct distribution) | Full sandbox + security-scoped bookmarks for MAS — [security.md](security.md) |
+| Release signing | Hardened runtime + network client entitlements | Notarization automation |
+| AGPL backend | Traversio for agent + opt-in perf; WARN on enable | Counsel review before commercial default — [traversio-licensing.md](traversio-licensing.md) |
 
 ---
 
@@ -479,7 +487,9 @@ Run: `make test` or `swift test` (**79** XCTest + **3** Swift Testing = **82** t
 - [Code walkthrough](code-walkthrough.md)
 - [Apple Silicon performance](apple-silicon-performance.md)
 - [TransferBackend protocol](transfer-backend.md)
-- [CLI reference](cli-reference.md) (planned)
+- [CLI reference](cli-reference.md)
+- [Traversio licensing policy](traversio-licensing.md)
+- [Security & distribution](security.md)
 - [SFTP backend spike](spikes/sftp-backend-spike.md)
 
 ---

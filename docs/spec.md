@@ -9,7 +9,7 @@ An open-source, WinSCP-inspired file transfer client rebuilt from the ground up 
 | Field | Value |
 |---|---|
 | Version | 0.3 (draft) |
-| Status | Phase 0–1 in progress; SFTP MVP + Apple Silicon performance layer shipped |
+| Status | Phase 0–2 largely implemented; SFTP MVP + Apple Silicon performance + parity features in v0.3 preview |
 | Target OS | macOS 15 Sequoia minimum; macOS 26 Tahoe primary |
 | Architecture | Apple Silicon native (arm64); Intel best-effort via Rosetta where feasible |
 | Language | Swift 6 |
@@ -404,7 +404,7 @@ Classic source-list sidebar (groups + saved sessions) and dense detail panel. Fo
 │  Keychain · ProfileStore · known_hosts (TOFU) · config.toml │
 └─────────────────────────────────────────────────────────────┘
          ▲                              ▲
-         │ macscp-benchmark CLI         │ macscp CLI (planned)
+         │ macscp-benchmark CLI         │ macscp-cli → macscp
          └──────────────────────────────┘
 ```
 
@@ -421,7 +421,7 @@ Future backends (FTP, WebDAV, S3) implement the same `TransferBackend` surface w
 | `MacSCPBenchmark` | `macscp-benchmark` CLI — throughput comparison vs OpenSSH (`make bench-apple-silicon`) |
 | `MacSCPTests` | Unit and integration tests against local OpenSSH fixture (port 2222); **79** XCTest + **3** Swift Testing cases |
 
-Planned: `MacSCPCLI` user-facing automation binary (Phase 2).
+Shipped: `macscp-cli` Swift product (installed as `macscp`; see [cli-reference.md](cli-reference.md)).
 
 ### 7.2 Persistence
 
@@ -504,27 +504,28 @@ Run: `make test` or `swift test`.
 ### Phase 1 — MVP (8–10 weeks)
 
 - [x] Transfer queue with progress and cancel
-- [ ] Host key verification UI (TOFU store implemented; prompt UI pending)
-- [ ] Rename, mkdir, chmod, properties (backend APIs partial; UI incomplete)
+- [x] Host key verification UI (TOFU store + interactive prompt)
+- [x] Rename, mkdir, chmod, properties (context menus + sheets)
 - [x] Drag-and-drop upload/download (files and folders)
 - [x] Overwrite prompts (skip / rename / overwrite)
 - [x] SSH agent authentication (Traversio backend)
 - [x] Configurable logging + transfer tuning (`~/.macscp/config.toml`)
 - [x] Apple Silicon performance layer (presets, TCP tuning, pool, listing cache, mmap reads)
 - [x] CI benchmark gate vs OpenSSH (`verify-benchmark-report.sh`)
-- [ ] Internal + external remote editor
-- [ ] Directory compare + one-way sync
-- [ ] `macscp` CLI: open, get, put, ls, exit codes
+- [x] External remote editor (download → edit → re-upload)
+- [ ] Internal remote editor
+- [x] Directory compare + one-way sync
+- [x] `macscp` CLI: open, get, put, ls, sync, script (product `macscp-cli`)
 
 ### Phase 2 — Parity+ (8–12 weeks)
 
 - [ ] SCP, FTP, FTPS
-- [ ] Live sync (FSEvents watch)
-- [ ] Terminal hand-off (Terminal + iTerm2)
+- [x] Live sync (FSEvents watch)
+- [x] Terminal hand-off (Terminal + iTerm2)
 - [ ] Shortcuts actions
-- [ ] Quick Look remote preview
-- [ ] Script files + WinSCP command mapping doc
-- [ ] Touch ID session lock
+- [x] Quick Look remote preview
+- [x] Script runner + WinSCP command mapping doc (basic `.macscp` subset)
+- [x] Touch ID session lock
 
 ### Phase 3 — Cloud & Integrations (ongoing)
 
@@ -541,11 +542,11 @@ Run: `make test` or `swift test`.
 | # | Question | Status / recommendation |
 |---|---|---|
 | 1 | Swift NIO SSH vs libssh2 for SFTP? | **Resolved:** Citadel (NIOSSH) default; Traversio for agent/optional perf (see [SFTP spike](spikes/sftp-backend-spike.md)) |
-| 2 | Sandbox enabled at ship? | Yes, with user-granted folder bookmarks |
-| 3 | Ship on Mac App Store? | Direct + Homebrew first; MAS later if sandbox feasible |
+| 2 | Sandbox enabled at ship? | **Resolved (phased):** No App Sandbox in v0.3 direct distribution; hardened runtime + network entitlements when signed; full sandbox + bookmarks for MAS track — [security.md](security.md) |
+| 3 | Ship on Mac App Store? | Direct + Homebrew first; MAS after sandbox/bookmarks |
 | 4 | Master password vs pure Keychain? | Both: Keychain default, master password for exports |
 | 5 | Explorer mode in v1? | Defer to Phase 2 |
-| 6 | Traversio as default backend? | **Open:** AGPL-3.0 — legal review before wide distribution; opt-in via `use_traversio_for_performance` |
+| 6 | Traversio as default backend? | **Resolved:** Citadel default; Traversio for agent + explicit opt-in only — [traversio-licensing.md](traversio-licensing.md), [NOTICE](../NOTICE) |
 
 ---
 
@@ -569,14 +570,14 @@ Run: `make test` or `swift test`.
 |---|---|---|---|
 | Site Manager | Session sidebar + profile editor | 0 | Done |
 | Commander interface | Dual-pane commander | 0–1 | Done |
-| Synchronize directories | Compare + sync dialog | 1–2 | Not started |
-| Keep Remote Directory Up To Date | Live sync | 2 | Not started |
-| Integrated editor | Internal + external editor | 1 | Not started |
-| PuTTY integration | Terminal / iTerm hand-off | 2 | Not started |
-| Scripting / `winscp.com` | `macscp` CLI + script files | 1–2 | Spec only |
+| Synchronize directories | Compare + sync dialog | 1–2 | Done (one-way) |
+| Keep Remote Directory Up To Date | Live sync | 2 | Done |
+| Integrated editor | Internal + external editor | 1 | External done; internal pending |
+| PuTTY integration | Terminal / iTerm hand-off | 2 | Done |
+| Scripting / `winscp.com` | `macscp` CLI + script files | 1–2 | CLI done; full script parity partial |
 | Performance tuning | Transfer presets + Apple Silicon layer | 1 | Done |
 | .NET assembly | Swift `MacSCPCore` library (documented API) | 3 | Partial (library exists) |
-| Master password | Export encryption + optional app lock | 1–2 | Not started |
+| Master password | Export encryption + optional app lock | 1–2 | Touch ID lock done; export encryption pending |
 
 ---
 

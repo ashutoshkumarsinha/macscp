@@ -2,9 +2,17 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.1 (draft) |
-| Binary | `macscp` |
-| Related | [spec.md §4](spec.md), [scripting.md](scripting.md) |
+| Version | 0.3 |
+| Binary | `macscp` (Swift product `macscp-cli`; see note below) |
+| Related | [spec.md §4](spec.md), [scripting.md](scripting.md), [traversio-licensing.md](traversio-licensing.md) |
+
+The Swift package product is named **`macscp-cli`** because the GUI binary `MacSCP` and CLI `macscp` collide on case-insensitive macOS build paths. After `make package-cli` or Homebrew install, the command on `$PATH` is **`macscp`**.
+
+During development:
+
+```bash
+swift run macscp-cli --help
+```
 
 The `macscp` command-line tool provides scriptable file transfers and shares the session profile store with the MacSCP GUI. Syntax is intentionally close to [WinSCP scripting](https://winscp.net/eng/docs/scripting) where practical.
 

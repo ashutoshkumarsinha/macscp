@@ -1,0 +1,29 @@
+MacSCP
+======
+
+Copyright (c) MacSCP contributors. See LICENSE for the application license.
+
+Third-party components
+----------------------
+
+Citadel
+  https://github.com/orlandos-nl/Citadel
+  License: MIT
+
+Traversio
+  https://github.com/GitSwiftHQ/Traversio
+  License: GNU Affero General Public License v3.0 (AGPL-3.0)
+
+  Traversio is used for SSH agent authentication and when the user explicitly
+  enables performance mode (`use_traversio_for_performance = true` in
+  ~/.macscp/config.toml). Citadel remains the default backend for password and
+  SSH key file sessions.
+
+  Under the AGPL-3.0, recipients of this software may obtain Traversio source
+  code from the URL above. MacSCP source code is available from the project
+  repository listed in README.md.
+
+  Policy: docs/traversio-licensing.md
+
+Additional dependencies are listed in Package.resolved and their respective
+repositories. Run `swift package show-dependencies` for the full graph.

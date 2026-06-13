@@ -137,7 +137,14 @@ use_traversio_for_performance = false
         }
 
         let contents = try String(contentsOf: configURL, encoding: .utf8)
-        return parseSettings(from: contents)
+        let settings = parseSettings(from: contents)
+        if settings.transfer.useTraversioForPerformance {
+            MacSCPLogger.shared.warning(
+                "use_traversio_for_performance=true in config.toml enables the Traversio (AGPL) backend for key/password sessions. See NOTICE and docs/traversio-licensing.md.",
+                category: .backend
+            )
+        }
+        return settings
     }
 
     /// Ensures `~/.macscp/config.toml` exists and returns parsed logging settings.

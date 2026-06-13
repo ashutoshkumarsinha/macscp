@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Run the macscp CLI from the current build tree (debug or release).
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ARCH="$(uname -m)"
+for candidate in \
+  "${ROOT}/.build/debug/macscp-cli" \
+  "${ROOT}/.build/${ARCH}-apple-macosx/debug/macscp-cli" \
+  "${ROOT}/.build/release/macscp-cli" \
+  "${ROOT}/.build/${ARCH}-apple-macosx/release/macscp-cli"; do
+  if [[ -x "${candidate}" ]]; then
+    exec "${candidate}" "$@"
+  fi
+done
+echo "macscp-cli not built; run: make cli" >&2
+exit 1

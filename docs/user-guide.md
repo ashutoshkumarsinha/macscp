@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Version | 0.3 |
-| Applies to | MacSCP Phase 0–1 (developer preview) |
+| Applies to | MacSCP v0.3 developer preview |
 | Related | [Product spec](spec.md) v0.3, [HLD](hld.md), [Apple Silicon performance](apple-silicon-performance.md) |
 
 ---
@@ -14,7 +14,7 @@ MacSCP is an open-source, WinSCP-inspired SFTP client for macOS. It provides a *
 
 On Apple Silicon, MacSCP applies optional **transfer presets** (connection pooling, larger chunks, TCP tuning) to improve throughput without manual tuning.
 
-This guide covers what is **implemented today**. Features listed in the [product spec](spec.md) but not yet built (sync, remote editor, CLI, tabs) are noted where relevant.
+This guide covers what is **implemented in v0.3**. Phase 3 items (S3, Finder Sync, tabs) remain planned — see [spec.md](spec.md).
 
 ---
 
@@ -25,7 +25,7 @@ This guide covers what is **implemented today**. Features listed in the [product
 | macOS | 15 Sequoia or later |
 | Hardware | Apple Silicon recommended; Intel via Rosetta where supported |
 | Remote server | Any SFTP server (OpenSSH `sshd` is the reference) |
-| Build (from source) | Swift 6.0+, Xcode 16+ or Swift toolchain |
+| Build (from source) | Swift 6.2+, Xcode 26+ (CI) or Xcode 16+ with Xcode 26 selected locally |
 
 ---
 
@@ -35,7 +35,7 @@ This guide covers what is **implemented today**. Features listed in the [product
 git clone <repository-url> macscp
 cd macscp
 make build
-make test    # 82 tests (79 XCTest + 3 Swift Testing)
+make test    # 91 tests (88 XCTest + 3 Swift Testing)
 make check   # build + test (same as CI first step)
 ```
 
@@ -62,7 +62,7 @@ make logs     # tail today's log file
 make ci       # check + SFTP benchmarks + pass-criteria verify (local CI parity)
 ```
 
-A future release will ship as a signed `.app` bundle or Homebrew cask.
+A signed `.app` bundle and Homebrew cask/formula templates are available — see [packaging.md](packaging.md) and [packaging/homebrew/README.md](../packaging/homebrew/README.md).
 
 ---
 
@@ -194,7 +194,7 @@ After editing `config.toml`, restart MacSCP or reconnect sessions for pool and p
 
 See [Apple Silicon Performance Guide](apple-silicon-performance.md) and [code walkthrough §9](code-walkthrough.md) for implementation details.
 
-Host keys are stored with trust-on-first-use in `~/.macscp/known_hosts.json`. Set `hostKeyFingerprint` in a session profile's advanced settings to pin a specific key. A first-connect confirmation dialog is planned; today trust is recorded silently on successful connect.
+Host keys use trust-on-first-use in `~/.macscp/known_hosts.json`. On first connect (or key change), MacSCP shows a **Host Key** sheet with the SHA-256 fingerprint — choose **Trust** or **Reject**. Pin a expected fingerprint in the profile **Advanced** field (`hostKeyFingerprint`) to enforce a specific key. CLI batch mode (`macscp-cli open --batch`) rejects unknown keys without prompting.
 
 View today's log:
 
@@ -210,7 +210,7 @@ tail -f ~/.macscp/logs/macscp-$(date +%Y-%m-%d).log
 
 ```text
 ┌──────────────────────────────────────────────────────────┐
-│  ↑  ↻   Upload   Download                    [Queue: N]  │
+│  ↑  ↻   Upload   Download   Sync   Terminal   Live Sync   [Queue: N]  │
 ├─────────────────────────┬────────────────────────────────┤
 │ LOCAL                   │ REMOTE                         │
 │ ~/path                  │ host:/remote/path              │
@@ -240,6 +240,43 @@ tail -f ~/.macscp/logs/macscp-$(date +%Y-%m-%d).log
 - Selection count appears in the toolbar
 
 Only **files** transfer by default; **folders** can also be selected, dragged, or uploaded/downloaded recursively (preserving directory structure).
+
+### 6.4 File operations (context menu)
+
+Right-click a file or folder in either pane:
+
+| Action | Local | Remote |
+|---|---|---|
+| **Rename** | Yes | Yes |
+| **Delete** | Moves to Trash | Removes file or recursive directory |
+| **Properties / chmod** | — | Octal permissions sheet |
+| **Quick Look** | — | Preview remote file |
+| **Edit** | — | Download → external editor → re-upload on save |
+
+### 6.5 Directory sync
+
+1. Click **Sync** in the toolbar (or use the sync sheet).
+2. MacSCP compares the current local and remote directories.
+3. Review the diff table (new, newer, size mismatch).
+4. Choose direction (local → remote or remote → local) and run sync or preview only.
+
+### 6.6 Live sync, terminal, and lock
+
+| Feature | How |
+|---|---|
+| **Live Sync** | Toolbar toggle — watches the local folder with FSEvents and uploads changed files |
+| **Terminal** | Opens Terminal.app or iTerm2 with `ssh user@host` (uses profile settings) |
+| **Touch ID lock** | Enable in login screen **Advanced** — requires authentication before connect |
+
+### 6.7 Command-line tool (`macscp`)
+
+```bash
+make cli
+./scripts/macscp open sftp://user@127.0.0.1:2222/ --batch
+make package-cli   # sudo: installs /usr/local/bin/macscp
+```
+
+Release `.app` bundles the same CLI at `MacSCP.app/Contents/MacOS/macscp`. Swift package product: **`macscp-cli`**. See [cli-reference.md](cli-reference.md).
 
 ---
 
@@ -412,20 +449,20 @@ Details: [SFTP backend spike](spikes/sftp-backend-spike.md).
 
 ## 12. What's Not in This Release
 
-The following are specified but **not yet available** in the GUI:
+The following remain **planned** (see [spec.md](spec.md)):
 
-- Directory sync / mirror (one-way recursive transfer is supported; bidirectional sync is not)
-- Remote file editor
-- Integrated terminal
+- **Internal** remote editor (external editor via Quick Look / Edit is supported)
+- **Integrated** terminal pane (external Terminal / iTerm hand-off is supported)
 - Tabs and multiple sessions per window
-- Quick Look preview
-- chmod/chown property sheets (backend APIs exist; UI not exposed)
-- Host key change confirmation dialog (TOFU store works; prompt UI pending)
-- `macscp` command-line tool
-- ProxyJump UI
+- Bidirectional / two-way sync (one-way compare + sync is supported)
+- ProxyJump / bastion UI
 - Key passphrase field in login UI (encrypted keys work in benchmarks)
+- SCP, FTP, FTPS, WebDAV, S3 backends
+- Shortcuts, AppleScript, Finder Sync extension
+- Master password for profile export encryption
+- App Sandbox + notarized Mac App Store build
 
-See [spec.md](spec.md) roadmap for timelines.
+See [spec.md](spec.md) roadmap for Phase 3 items.
 
 ---
 

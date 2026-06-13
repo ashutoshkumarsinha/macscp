@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "MacSCPUI", targets: ["MacSCPUI"]),
         .executable(name: "macscp-benchmark", targets: ["MacSCPBenchmark"]),
         .executable(name: "MacSCP", targets: ["MacSCPApp"]),
+        .executable(name: "macscp-cli", targets: ["MacSCPCLI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/orlandos-nl/Citadel.git", from: "0.12.0"),
@@ -53,6 +54,14 @@ let package = Package(
                 "MacSCPUI",
             ],
             path: "Sources/MacSCPApp"
+        ),
+        .executableTarget(
+            name: "MacSCPCLI",
+            dependencies: [
+                "MacSCPCore",
+                "MacSCPBackends",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ]
         ),
         .target(
             name: "MacSCPUI",

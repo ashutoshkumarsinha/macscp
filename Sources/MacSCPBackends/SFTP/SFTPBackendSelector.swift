@@ -36,6 +36,10 @@ public enum SFTPBackendSelector {
         switch kind {
         case .traversio where settings.useTraversioForPerformance:
             reason = "performance mode (Traversio)"
+            MacSCPLogger.shared.warning(
+                "Traversio AGPL backend enabled for key/password session (use_traversio_for_performance). See NOTICE and docs/traversio-licensing.md.",
+                category: .backend
+            )
         case .traversio:
             reason = "SSH agent auth"
         case .citadel where settings.preset == .appleSilicon:

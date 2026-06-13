@@ -2,7 +2,7 @@
 #
 # Usage:
 #   make              # show targets
-#   make build test   # compile and run tests (50 XCTest + 3 Swift Testing)
+#   make build test   # compile and run tests (88 XCTest + 3 Swift Testing)
 #   make run          # launch MacSCP (starts local SFTP fixture first)
 
 SWIFT       ?= swift
@@ -14,10 +14,10 @@ VERIFY_BENCH := $(SCRIPTS)/verify-benchmark-report.sh
 CONFIG      := $(HOME)/.macscp/config.toml
 LOG_DIR     := $(HOME)/.macscp/logs
 
-.PHONY: help build build-release test check ci clean run \
+.PHONY: help build build-release test check ci clean run cli \
         server-start server-stop server-restart server-status \
         bench bench-full bench-upload-spike bench-apple-silicon bench-profile bench-verify \
-        build-release package-dmg icon \
+        build-release package-dmg package-cli icon \
         logs config paths
 
 .DEFAULT_GOAL := help
@@ -32,10 +32,19 @@ build: ## Build all targets (debug)
 build-release: ## Build optimized release binaries
 	$(SWIFT) build -c release
 
-test: build ## Run unit tests (50 XCTest + 3 Swift Testing)
+test: build ## Run unit tests (88 XCTest + 3 Swift Testing)
 	$(SWIFT) test
 
 check: build test ## Build + test (CI-friendly)
+
+cli: build ## Build macscp CLI (product macscp-cli; see docs/cli-reference.md)
+	$(SWIFT) build --product macscp-cli
+
+macscp: cli ## Run macscp CLI via scripts/macscp (builds first)
+	$(SCRIPTS)/macscp $(ARGS)
+
+package-cli: build-release ## Install macscp CLI to /usr/local/bin (requires sudo)
+	install -m 755 .build/release/macscp-cli /usr/local/bin/macscp
 
 ci: check bench-verify ## Local CI: tests + Apple Silicon benchmarks + pass-criteria check
 
