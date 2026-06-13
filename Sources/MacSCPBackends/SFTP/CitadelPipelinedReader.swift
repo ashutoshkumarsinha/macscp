@@ -1,23 +1,17 @@
-// CitadelPipelinedReader.swift — Overlapping SFTP READ requests for faster downloads.
+// CitadelPipelinedReader.swift — Read-ahead SFTP downloads (one outstanding READ per handle).
 
 import Citadel
 import Foundation
 import MacSCPCore
 import NIO
 
-/// Pipelines SFTP READ requests at distinct offsets so multiple round-trips overlap per handle.
+/// Overlaps the next SFTP READ with local disk write. Citadel SFTPFile does not
+/// support concurrent reads on one handle, so we prefetch at most one chunk ahead.
 enum CitadelPipelinedReader {
-    private struct ReadResult: Sendable {
-        let offset: UInt64
-        let data: Data
-    }
-
     private final class ReadCoordinator: @unchecked Sendable {
         let file: SFTPFile
 
-        init(file: SFTPFile) {
-            self.file = file
-        }
+        init(file: SFTPFile) { self.file = file }
 
         func read(from offset: UInt64, length: UInt32) async throws -> Data {
             let buffer = try await file.read(from: offset, length: length)
@@ -37,12 +31,10 @@ enum CitadelPipelinedReader {
         progress: ProgressHandler?,
         cancellation: TransferCancellation?
     ) async throws -> Int64 {
+        _ = max(1, maxConcurrentReads)
         let coordinator = ReadCoordinator(file: file)
-        let window = max(1, maxConcurrentReads)
-        var readOffset = startOffset
-        var writeOffset = startOffset
-        var inFlight: [Task<ReadResult, Error>] = []
-        var inFlightHead = 0
+        var offset = startOffset
+        var prefetch: Task<Data, Error>?
         let startTime = Date()
         let resumedFrom = Int64(startOffset)
 
@@ -55,58 +47,52 @@ enum CitadelPipelinedReader {
                     direction: .download,
                     path: remotePath,
                     totalBytes: Int64(totalSize),
-                    transferredBytes: Int64(writeOffset),
+                    transferredBytes: Int64(offset),
                     bytesPerSecond: elapsed > 0
-                        ? Double(writeOffset - UInt64(resumedFrom)) / elapsed : nil
+                        ? Double(offset - UInt64(resumedFrom)) / elapsed : nil
                 )
             )
         }
 
-        defer {
-            for index in inFlightHead ..< inFlight.count {
-                inFlight[index].cancel()
-            }
-        }
+        defer { prefetch?.cancel() }
 
-        while writeOffset < totalSize || inFlightHead < inFlight.count {
+        while offset < totalSize {
             if cancellation?.isCancelled == true || Task.isCancelled {
                 throw BackendError.cancelled
             }
             try cancellation?.throwIfCancelled()
 
-            while inFlight.count - inFlightHead < window, readOffset < totalSize {
-                let length = min(chunkSize, UInt32(totalSize - readOffset))
-                let requestOffset = readOffset
-                readOffset += UInt64(length)
-
-                let readTask = Task {
-                    let data = try await coordinator.read(from: requestOffset, length: length)
-                    return ReadResult(offset: requestOffset, data: data)
+            let data: Data
+            if let prefetch {
+                do {
+                    data = try await prefetch.value
+                } catch is CancellationError {
+                    throw BackendError.cancelled
                 }
-                inFlight.append(readTask)
+            } else {
+                let length = min(chunkSize, UInt32(totalSize - offset))
+                data = try await coordinator.read(from: offset, length: length)
             }
 
-            guard inFlightHead < inFlight.count else { break }
+            if data.isEmpty { break }
 
-            let nextTask = inFlight[inFlightHead]
-            inFlightHead += 1
-            let result: ReadResult
-            do {
-                result = try await nextTask.value
-            } catch is CancellationError {
-                throw BackendError.cancelled
-            }
-
-            // Tasks complete in submission order; writeOffset must match read offset.
-            if result.offset != writeOffset {
-                throw BackendError.transferFailed("Pipelined read out of order at \(result.offset)")
-            }
-            try writeHandle.write(contentsOf: result.data)
-            writeOffset += UInt64(result.data.count)
+            try writeHandle.write(contentsOf: data)
+            offset += UInt64(data.count)
             reportProgress()
+
+            prefetch?.cancel()
+            if offset < totalSize {
+                let nextOffset = offset
+                let nextLength = min(chunkSize, UInt32(totalSize - nextOffset))
+                prefetch = Task {
+                    try await coordinator.read(from: nextOffset, length: nextLength)
+                }
+            } else {
+                prefetch = nil
+            }
         }
 
-        return Int64(writeOffset - startOffset)
+        return Int64(offset - startOffset)
     }
 }
 
