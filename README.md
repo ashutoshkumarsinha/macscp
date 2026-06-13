@@ -15,7 +15,7 @@ Sources/
   MacSCPCore/       Shared models, TransferBackend protocol
   MacSCPBackends/   Citadel + Traversio SFTP backends
   MacSCPBenchmark/  SFTP spike benchmark harness
-  MacSCPApp/        Phase 0 UI (session login + dual-pane shell)
+  MacSCPApp/        Phase 0–1 UI (login, commander, transfer queue)
 Tests/
   MacSCPTests/
 scripts/
@@ -63,6 +63,8 @@ swift run MacSCP
 ```
 
 Default sample profile connects to `127.0.0.1:2222` with `.benchmark/keys/client_key`.
+
+**Commander transfers (Phase 1):** select files in a pane, then **Upload** (⇧⌘U) or **Download** (⇧⌘D). Progress appears in the transfer queue panel; pause/resume/cancel from there.
 
 ## Docs
 

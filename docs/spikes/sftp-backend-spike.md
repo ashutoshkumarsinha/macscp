@@ -346,7 +346,8 @@ Checklist to complete during Phase 0 (1–2 days each):
 | 2026-06-13 | **Tentative: Citadel** | Pending benchmark + agent spike |
 | 2026-06-13 | **Benchmark run (loopback)** | Download PASS; upload FAIL (0.45 avg ratio); small files FAIL (0.12). Resume + encrypted key PASS. |
 | 2026-06-13 | **Upload optimization** | Directory cache, batch API, concurrent small files; small upload 2× faster; large upload ratio unchanged |
-| 2026-06-13 | **Traversio upload spike** | Traversio faster on upload-only tests; AGPL — spike only, not default backend |
+| 2026-06-13 | **Citadel pipelined writes** | `maxConcurrentWrites` + sliding-window SFTP WRITE overlap; upload-spike large 1 MB now ~74 MB/s (vs Traversio ~65) |
+| 2026-06-13 | **Phase 1 UI** | Commander upload/download actions, transfer queue with progress/pause/cancel |
 
 ---
 
