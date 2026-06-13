@@ -1,4 +1,8 @@
-// MacSCPConfiguration.swift — ~/.macscp/config.toml (created on first bootstrap).
+// MacSCPConfiguration.swift
+//
+// Loads and saves ~/.macscp/config.toml (logging + transfer settings).
+// On first launch, creates the file — arm64 Macs get preset = "apple_silicon".
+// See TransferPerformanceTuning.swift for how presets map to numbers.
 
 import Foundation
 
@@ -126,6 +130,7 @@ use_traversio_for_performance = false
 
         let configURL = configURL(homeDirectory: homeDirectory)
         if !FileManager.default.fileExists(atPath: configURL.path) {
+            // First launch: arm64 Macs get apple_silicon preset baked into new config.toml.
             let preset = TransferPerformanceTuning.suggestedPresetOnFirstLaunch() ?? .default
             let contents = defaultConfigContents(preset: preset)
             try contents.write(to: configURL, atomically: true, encoding: .utf8)
@@ -195,6 +200,7 @@ use_traversio_for_performance = false
             settings.chunkSize = 262_144
             settings.verifyChecksums = false
         case .appleSilicon:
+            // Tuned for M-series: bigger chunks, more concurrent uploads, connection pool.
             settings.maxConcurrentTransfers = AppleSiliconSupport.recommendedPoolSize
             settings.maxConcurrentWrites = 32
             settings.maxConcurrentReads = 16

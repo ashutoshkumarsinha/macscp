@@ -2,15 +2,17 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.2 |
+| Version | 0.3 |
 | Applies to | MacSCP Phase 0–1 (developer preview) |
-| Related | [Product spec](spec.md), [HLD](hld.md) |
+| Related | [Product spec](spec.md) v0.3, [HLD](hld.md), [Apple Silicon performance](apple-silicon-performance.md) |
 
 ---
 
 ## 1. Introduction
 
 MacSCP is an open-source, WinSCP-inspired SFTP client for macOS. It provides a **dual-pane commander** for browsing local and remote files, transferring data over SFTP, and managing saved connection profiles.
+
+On Apple Silicon, MacSCP applies optional **transfer presets** (connection pooling, larger chunks, TCP tuning) to improve throughput without manual tuning.
 
 This guide covers what is **implemented today**. Features listed in the [product spec](spec.md) but not yet built (sync, remote editor, CLI, tabs) are noted where relevant.
 
@@ -33,7 +35,8 @@ This guide covers what is **implemented today**. Features listed in the [product
 git clone <repository-url> macscp
 cd macscp
 make build
-make test
+make test    # 82 tests (79 XCTest + 3 Swift Testing)
+make check   # build + test (same as CI first step)
 ```
 
 Run the app (starts local test SFTP server on port 2222):
@@ -56,6 +59,7 @@ Useful development targets:
 make paths    # config, log, profile, known-hosts paths
 make config   # show ~/.macscp/config.toml
 make logs     # tail today's log file
+make ci       # check + SFTP benchmarks + pass-criteria verify (local CI parity)
 ```
 
 A future release will ship as a signed `.app` bundle or Homebrew cask.
@@ -87,7 +91,9 @@ This starts OpenSSH on `127.0.0.1:2222` with key auth. The sample profile uses `
    - **Authentication** — SSH key file, password, or SSH agent
 3. Click **Login**.
 
-For **SSH agent**, ensure `ssh-add -l` shows keys and `SSH_AUTH_SOCK` is set (macOS ssh-agent or 1Password agent). MacSCP uses the Traversio backend for agent sessions.
+For **SSH agent**, ensure `ssh-add -l` shows keys and `SSH_AUTH_SOCK` is set (macOS ssh-agent or 1Password agent). MacSCP uses the **Traversio** backend for agent sessions.
+
+For **SSH key file** or **password**, MacSCP uses the **Citadel** backend by default. You can opt into Traversio for key/password sessions with `use_traversio_for_performance = true` in config (AGPL — see §11).
 
 On success, the **Commander** window opens with local files on the left and remote files on the right.
 
@@ -119,18 +125,24 @@ Profiles are stored in:
 
 Select a profile in the sidebar — the form updates. Change fields and click **Save** again.
 
-### 5.3 Authentication
+### 5.3 Authentication and backends
 
-| Method | Status | Notes |
+| Method | Backend | Notes |
 |---|---|---|
-| SSH public key | Supported | Path to private key (e.g. `~/.ssh/id_ed25519`) |
-| Password | Supported | Stored in macOS Keychain (not in profiles.json) |
-| SSH agent | Supported | Uses `SSH_AUTH_SOCK` (ssh-agent); connects via Traversio backend |
+| SSH public key | Citadel (default) | Path to private key (e.g. `~/.ssh/id_ed25519`) |
+| Password | Citadel (default) | Stored in macOS Keychain (not in profiles.json) |
+| SSH agent | Traversio | Uses `SSH_AUTH_SOCK` (ssh-agent or 1Password agent) |
 | Encrypted keys | Backend supports | Passphrase field coming in UI |
+
+**Optional:** set `use_traversio_for_performance = true` under `[transfer]` to route key/password sessions through Traversio for maximum throughput experiments. SSH agent sessions always use Traversio regardless of this flag.
 
 ### 5.4 Configuration and logs
 
-MacSCP reads settings from `~/.macscp/config.toml` (created automatically on first launch). On **Apple Silicon**, a new config file defaults to `preset = "apple_silicon"` with tuned transfer values. Log files are written to:
+MacSCP reads settings from `~/.macscp/config.toml` (created automatically on first launch).
+
+**First launch on Apple Silicon:** a new config file is written with `preset = "apple_silicon"` and matching tuned numbers (pool size, 2 MB chunks, etc.). Intel Macs get `preset = "default"`.
+
+Log files are written to:
 
 ```text
 ~/.macscp/logs/macscp-YYYY-MM-DD.log
@@ -159,9 +171,30 @@ verify_checksums = false
 use_traversio_for_performance = false  # AGPL — see §11 slow uploads
 ```
 
-Presets apply tuned defaults for concurrency and chunk size. On arm64 first launch, MacSCP writes `apple_silicon` instead of `default`. See [Apple Silicon Performance Guide](apple-silicon-performance.md).
+**Preset cheat sheet:**
 
-Host keys are stored with trust-on-first-use in `~/.macscp/known_hosts.json`. Set `hostKeyFingerprint` in a session profile's advanced settings to pin a specific key.
+| Preset | Typical use | What changes |
+|---|---|---|
+| `default` | General / Intel Mac first launch | 1 MB chunks, modest concurrency |
+| `lan` | Fast wired network | Higher concurrency, 2 MB chunks |
+| `wan` | High latency / internet | Smaller chunks, single connection pool, conservative TCP |
+| `apple_silicon` | M-series Mac (arm64 first launch) | 2–4 parallel SFTP connections, 2 MB chunks, tuned upload workers |
+
+Presets apply tuned defaults for concurrency and chunk size. Explicit keys in the same `[transfer]` section override preset values.
+
+**Other transfer options:**
+
+| Key | Purpose |
+|---|---|
+| `verify_checksums` | When `true`, compute SHA-256 while uploading and compare with a full-file hash at the end (slight CPU cost) |
+| `resume` | When `true`, partial downloads can continue from the last byte (default) |
+| `max_concurrent_transfers` | Number of parallel SSH/SFTP connections for the queue (raised automatically by `apple_silicon` on arm64 unless you set a higher value) |
+
+After editing `config.toml`, restart MacSCP or reconnect sessions for pool and preset changes to take effect.
+
+See [Apple Silicon Performance Guide](apple-silicon-performance.md) and [code walkthrough §9](code-walkthrough.md) for implementation details.
+
+Host keys are stored with trust-on-first-use in `~/.macscp/known_hosts.json`. Set `hostKeyFingerprint` in a session profile's advanced settings to pin a specific key. A first-connect confirmation dialog is planned; today trust is recorded silently on successful connect.
 
 View today's log:
 
@@ -233,7 +266,7 @@ Downloads copy selected remote files and folders to the **current local director
 - Selecting a folder queues all nested **files** (symlinks are skipped on download).
 - Parent directories are created automatically on the destination side.
 - Overwrite prompts apply per file when names conflict.
-- Very large trees may take time to scan before jobs appear in the queue.
+- Very large local folder trees are scanned on a background task before jobs appear in the queue (the UI stays responsive).
 
 ### 7.4 Drag-and-Drop Tips
 
@@ -292,7 +325,7 @@ Each running job shows:
 - Transfer speed (MB/s or KB/s)
 - ETA when estimable
 
-Up to **2 transfers** run concurrently by default (configurable in `~/.macscp/config.toml` → `[transfer].max_concurrent_transfers`).
+Up to **2 transfers** run concurrently by default (`max_concurrent_transfers = 2`). With `preset = "apple_silicon"` on Apple Silicon, MacSCP may raise the pool to **2–4** connections based on CPU cores unless you set `max_concurrent_transfers` explicitly in config.
 
 ### 9.4 Cancelling a Transfer
 
@@ -341,17 +374,39 @@ sftp user@host
 
 - Verify write permission on remote path (upload) or local folder (download).
 - Check available disk space.
-- Retry after cancel; resume is enabled for partial downloads.
+- Retry after cancel; **resume** is enabled for partial downloads when `resume = true` in config.
 
-### Slow Uploads
+### Slow Uploads or Downloads
 
-MacSCP uses read-ahead pipelined SFTP I/O on the Citadel backend when `[transfer].max_concurrent_reads` / `max_concurrent_writes` > 1. When `max_concurrent_transfers` > 1, the app opens multiple SFTP connections (one per slot) so parallel queue jobs do not serialize on a single handle. Citadel also applies TCP send/receive buffer sizes and `TCP_NODELAY` from the active preset after connect.
+MacSCP optimizes SFTP throughput in several ways:
 
-**Presets:** set `preset = "lan"`, `"wan"`, or `"apple_silicon"` for tuned defaults. See [Apple Silicon Performance Guide](apple-silicon-performance.md).
+1. **Presets** — `lan`, `wan`, or `apple_silicon` in `~/.macscp/config.toml` adjust chunk sizes, concurrency, and (for Citadel) TCP socket buffers after connect.
+2. **Connection pool** — when `max_concurrent_transfers` > 1, parallel queue jobs use separate SSH sessions instead of blocking each other.
+3. **Pipelined I/O** — Citadel backends issue multiple SFTP READ/WRITE requests in flight when `max_concurrent_reads` / `max_concurrent_writes` > 1.
+4. **Listing cache** — remote directory listings are cached briefly (3 seconds) to speed up repeated browsing and folder uploads.
+5. **Large local files** — files ≥ 256 KB are read via memory mapping on upload for lower overhead.
 
-**Traversio performance mode:** `use_traversio_for_performance = true` switches key/password sessions to the Traversio backend (AGPL). SSH agent sessions always use Traversio.
+**Quick fixes to try:**
 
-Tune concurrency in `~/.macscp/config.toml`. Benchmark details: [SFTP backend spike](spikes/sftp-backend-spike.md).
+| Goal | Config change |
+|---|---|
+| Faster on M-series Mac | `preset = "apple_silicon"` (auto on first launch) |
+| Saturate a fast LAN | `preset = "lan"` or raise `max_concurrent_uploads` |
+| Stable on slow internet | `preset = "wan"` |
+| Experiment with Traversio throughput | `use_traversio_for_performance = true` (AGPL; key/password only) |
+
+**Presets:** see [Apple Silicon Performance Guide](apple-silicon-performance.md).
+
+**Traversio performance mode:** `use_traversio_for_performance = true` switches key/password sessions to Traversio. SSH agent sessions always use Traversio.
+
+**Benchmarks (developers):** compare MacSCP against OpenSSH on loopback:
+
+```bash
+make bench-apple-silicon
+make bench-verify    # fails if below spec pass criteria (large ≥ 0.90×, small ≥ 0.80× OpenSSH)
+```
+
+Details: [SFTP backend spike](spikes/sftp-backend-spike.md).
 
 ---
 
@@ -364,7 +419,8 @@ The following are specified but **not yet available** in the GUI:
 - Integrated terminal
 - Tabs and multiple sessions per window
 - Quick Look preview
-- chmod/chown property sheets
+- chmod/chown property sheets (backend APIs exist; UI not exposed)
+- Host key change confirmation dialog (TOFU store works; prompt UI pending)
 - `macscp` command-line tool
 - ProxyJump UI
 - Key passphrase field in login UI (encrypted keys work in benchmarks)
@@ -379,7 +435,9 @@ See [spec.md](spec.md) roadmap for timelines.
 |---|---|
 | Product specification | [spec.md](spec.md) |
 | Architecture (HLD) | [hld.md](hld.md) |
-| Developer / protocol docs | [README.md](README.md) |
+| Apple Silicon tuning | [apple-silicon-performance.md](apple-silicon-performance.md) |
+| Code tour (developers) | [code-walkthrough.md](code-walkthrough.md) |
+| Developer / protocol docs | [README.md](../README.md) |
 | Issues | Project issue tracker (when published) |
 
 ---
@@ -408,6 +466,19 @@ See [spec.md](spec.md) roadmap for timelines.
 2. In Transfers panel, click **×** on the job.
 3. Status changes to **Cancelled**; remote may contain a partial file depending on server behavior.
 
+### Tune Transfer Performance on Apple Silicon
+
+1. Quit MacSCP if running.
+2. Edit `~/.macscp/config.toml` — confirm or set:
+
+   ```toml
+   [transfer]
+   preset = "apple_silicon"
+   ```
+
+3. Relaunch and reconnect. The app opens multiple SFTP connections when the queue has parallel jobs.
+4. Optional: enable `verify_checksums = true` when uploading critical files.
+
 ---
 
-*End of user guide*
+*End of user guide v0.3*

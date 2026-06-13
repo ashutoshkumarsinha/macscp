@@ -2,9 +2,9 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.2 |
-| Status | Draft — reflects Phase 0–1 implementation |
-| Related | [Product spec](spec.md), [TransferBackend](transfer-backend.md), [SFTP spike](spikes/sftp-backend-spike.md) |
+| Version | 0.3 |
+| Status | Draft — reflects Phase 0–1 implementation (SFTP MVP + Apple Silicon performance) |
+| Related | [Product spec](spec.md), [TransferBackend](transfer-backend.md), [Apple Silicon performance](apple-silicon-performance.md), [SFTP spike](spikes/sftp-backend-spike.md) |
 
 ---
 
@@ -52,7 +52,7 @@ MacSCP is a native macOS SFTP client (WinSCP-inspired) built as a Swift 6 packag
 | [Traversio](https://github.com/GitSwiftHQ/Traversio) | SFTP backend for SSH agent auth; benchmark/spike comparison |
 | OpenSSH | Benchmark baseline (`sftp`, `sshd` test fixture) |
 
-**Backend selection:** `SessionCoordinator` picks Citadel for password and key-file profiles, Traversio when `authMethod == .agent` (Traversio's `SSHAgentClient` integrates with `SSH_AUTH_SOCK`).
+**Backend selection:** `SessionCoordinator` uses `SFTPBackendSelector`: Citadel for key/password by default, Traversio for SSH agent or when `use_traversio_for_performance` is set. Connection pool size comes from `TransferPerformanceTuning.effectivePoolSize` (elevated for `apple_silicon` preset on arm64). Each session carries a `TransferNetworkProfile` (from preset) used by `CitadelTCPConnector` for post-connect socket tuning.
 
 ---
 
@@ -60,14 +60,14 @@ MacSCP is a native macOS SFTP client (WinSCP-inspired) built as a Swift 6 packag
 
 ```text
 Sources/
-  MacSCPCore/         Protocol, session models, transfer options, config, directory planner
-  MacSCPBackends/     Citadel/Traversio backends, shared SFTP helpers, pipelined I/O
+  MacSCPCore/         Protocol, session models, config, performance tuning, BenchmarkHostInfo
+  MacSCPBackends/     Citadel/Traversio backends, listing cache, TCP tuning, buffer pool, mmap reads
   MacSCPUI/           TransferQueue, overwrite batch types (shared by app + tests)
   MacSCPApp/          SwiftUI executable + coordinators
     Coordinators/     Profile, Session, LocalPane, RemotePane, Transfer
   MacSCPBenchmark/    macscp-benchmark CLI for throughput spikes
 Tests/
-  MacSCPTests/        Unit + integration tests (53 cases)
+  MacSCPTests/        Unit + integration tests (82 cases)
 scripts/
   benchmark-env.sh    Local OpenSSH SFTP on :2222
   run-benchmarks.sh   Benchmark runner (--verify optional)
@@ -92,11 +92,11 @@ MacSCPTests ──▶ MacSCPCore, MacSCPBackends, MacSCPUI
 
 | Module | Responsibility |
 |---|---|
-| **MacSCPCore** | `TransferBackend` protocol, `SessionConfiguration`, `TransferOptions`, `TransferCancellation`, `DirectoryTransferPlanner`, `MacSCPConfiguration`, logging |
-| **MacSCPBackends** | SFTP implementations, shared path/upload helpers, pipelined Citadel read/write, host-key TOFU, agent auth (Traversio) |
+| **MacSCPCore** | `TransferBackend` protocol, `SessionConfiguration`, `TransferOptions`, `TransferCancellation`, `DirectoryTransferPlanner`, `MacSCPConfiguration`, `TransferPerformanceTuning`, `BenchmarkHostInfo`, `StreamingChecksum`, logging |
+| **MacSCPBackends** | SFTP implementations, shared path/upload helpers, pipelined Citadel read/write, listing cache, TCP tuning, buffer pool, mmap local reads, host-key TOFU, agent auth (Traversio) |
 | **MacSCPUI** | Background transfer queue, job state machine, overwrite batch model |
 | **MacSCPApp** | SwiftUI shell, coordinator decomposition, session profiles, commander panes, drag-and-drop |
-| **MacSCPBenchmark** | Automated throughput comparison vs OpenSSH |
+| **MacSCPBenchmark** | Automated throughput comparison vs OpenSSH; embeds `BenchmarkHostInfo` from MacSCPCore in JSON reports |
 
 ---
 
@@ -134,13 +134,16 @@ Key fields (defaults overridable in `~/.macscp/config.toml` `[transfer]`):
 |---|---|---|
 | `overwrite` | `.overwrite` | UI sets batch prompt → user picks skip/rename/overwrite |
 | `resume` | `true` (from config) | Partial transfer resume |
+| `verifyChecksums` | `false` (from config) | Streaming SHA-256 during upload (`StreamingChecksum`) |
 | `cancellation` | `nil` | `TransferCancellation` for mid-flight cancel |
-| `maxConcurrentWrites` | `8` | Citadel pipelined SFTP WRITE window |
-| `maxConcurrentReads` | `8` | Citadel pipelined SFTP READ window |
-| `maxConcurrentUploads` | `8` | Batch upload concurrency |
-| `chunkSize` | 1 MB | Read/write chunk size |
+| `maxConcurrentWrites` | from config / preset | Citadel pipelined SFTP WRITE window |
+| `maxConcurrentReads` | from config / preset | Citadel pipelined SFTP READ window |
+| `maxConcurrentUploads` | from config / preset | Batch upload concurrency |
+| `chunkSize` | from config / preset | Read/write chunk size (2 MB for `apple_silicon`) |
 | `smallFileThreshold` | 512 KB | Single-write fast path |
 | `progress` | `nil` | Callback → transfer queue UI |
+
+**Transfer presets** (`TransferPerformancePreset` in `MacSCPConfiguration`): `default`, `lan`, `wan`, `apple_silicon`. Presets apply tuned defaults; explicit keys in `config.toml` override. First launch on arm64 writes `apple_silicon` automatically. See [apple-silicon-performance.md](apple-silicon-performance.md).
 
 ### 5.3 TransferCancellation
 
@@ -157,10 +160,10 @@ Thread-safe cancellation token polled by backends during read/write loops and pi
 | Coordinator | Responsibility |
 |---|---|
 | **ProfileCoordinator** | Load/save/delete profiles, `SessionProfileDraft`, Keychain password migration |
-| **SessionCoordinator** | Connect/disconnect, backend lifecycle, remote working path, backend kind selection |
+| **SessionCoordinator** | Connect/disconnect, backend lifecycle, remote working path, backend kind selection, pool sizing, network profile on session |
 | **LocalPaneCoordinator** | Local path, entries, selection, navigation |
 | **RemotePaneCoordinator** | Remote entries, selection, refresh |
-| **TransferCoordinator** | Upload/download/drop, directory expansion, overwrite batch, queue binding |
+| **TransferCoordinator** | Upload/download/drop, directory expansion (local scan on detached task), overwrite batch, queue binding |
 
 `AppModel` forwards properties for SwiftUI bindings and implements `TransferBackendProvider`.
 
@@ -307,10 +310,36 @@ Both Citadel and Traversio backends share:
 See [SFTP backend spike](spikes/sftp-backend-spike.md) for benchmark numbers.
 
 1. Shared directory cache (fewer round-trips)
-2. Small-file single write
+2. Small-file single write; large files via mmap (`LocalFileSequentialReader`) + pipelined or chunked I/O
 3. Concurrent batch uploads
 4. Pipelined WRITE/READ requests per handle (Citadel)
-5. Config-driven concurrency from `config.toml`
+5. Config-driven concurrency from `config.toml` presets
+6. Connection pool (`PooledTransferBackend`) sized by `TransferPerformanceTuning.effectivePoolSize`
+7. Remote listing cache (`SFTPListingCache`, 3 s TTL) to reduce repeated `listDirectory` round-trips
+8. NIO buffer reuse (`TransferBufferPool`) on hot upload paths
+
+### 7.5 Transfer Performance Tuning (`MacSCPCore`)
+
+```text
+config.toml [transfer] preset + overrides
+        │
+        ▼
+MacSCPConfiguration.parseSettings / loadSettings
+        │
+        ├──▶ TransferPerformanceTuning.effectivePoolSize  → SessionCoordinator → PooledTransferBackend
+        ├──▶ TransferPerformanceTuning.networkProfile(from:) → SessionConfiguration.networkProfile
+        │         └──▶ CitadelTCPConnector (SO_SNDBUF, SO_RCVBUF, TCP_NODELAY)
+        └──▶ TransferOptions from settings → backends (chunk size, concurrency, resume, checksums)
+```
+
+| Preset | Pool / chunks (typical) | Network profile | Notes |
+|---|---|---|---|
+| `default` | 2 connections, 1 MB chunks | `lan` | Intel first-launch default |
+| `lan` | Higher concurrency, 2 MB chunks | `lan` | Wired LAN |
+| `wan` | 1 connection, 256 KB chunks | `wan` | TCP_NODELAY off |
+| `apple_silicon` | 2–4 connections (core-based), 2 MB chunks | `lan` | arm64 first-launch default |
+
+Benchmark reports tag runs via `BenchmarkHostInfo.current()` (`architecture`, `processorCount`, `isAppleSilicon`, `networkProfile` from `MACSCP_BENCH_NETWORK`).
 
 ---
 
@@ -323,7 +352,9 @@ See [SFTP backend spike](spikes/sftp-backend-spike.md) for benchmark numbers.
 | `TransferBackend` | `Sendable` class | `@unchecked Sendable` on concrete backends |
 | `SerializingTransferBackend` | `actor` | Wraps backend for serialized access from queue |
 | `TransferCancellation` | `@unchecked Sendable` | NSLock-protected flag |
+| `SFTPListingCache` | `actor` | 3 s TTL remote listing cache |
 | Citadel pipelined I/O | Task pool | Read/write coordinators wrap SFTP file handle |
+| Local directory scan | `Task.detached` | `TransferCoordinator` expands large local trees off main actor |
 
 **Cancellation path:** UI cancel → `TransferCancellation.cancel()` + `Task.cancel()` → backend throws `BackendError.cancelled` → queue marks job **Cancelled**. Disconnect calls `handleDisconnect()` on the queue.
 
@@ -371,8 +402,8 @@ Pass criteria (spec): ≥ 90% OpenSSH throughput (large files); ≥ 80% (small f
 
 | Suite | Coverage |
 |---|---|
-| `MacSCPCoreTests` | Session defaults, checksum |
-| `MacSCPConfigurationTests` | TOML config parsing |
+| `MacSCPCoreTests` | Session defaults, `networkProfile`, checksum |
+| `MacSCPConfigurationTests` | TOML parsing, presets (`lan`/`wan`/`apple_silicon`), first-launch arm64 defaults, Traversio perf flag |
 | `MacSCPLoggerTests` | Bootstrap, log files, level filtering |
 | `DirectoryTransferPlannerTests` | Local tree expansion, path join, mkdir |
 | `TransferCancellationTests` | Cancel token, continuation factory |
@@ -381,10 +412,16 @@ Pass criteria (spec): ≥ 90% OpenSSH throughput (large files); ≥ 80% (small f
 | `TransferDestinationResolverTests` | Skip/rename/overwrite resolution |
 | `TransferQueueTests` | Cancel, disconnect, skip policy (mock backend) |
 | `SFTPAttributeMappingTests` | Permission → entry type |
-| `StreamingChecksumTests` | Incremental SHA-256 vs one-shot |
-| `MacSCPConfigurationTests` | Presets, first-launch arm64 defaults |
+| `StreamingChecksumTests` | Incremental SHA-256 vs one-shot and file reads |
+| `TransferPerformanceTuningTests` | Presets, TCP buffers, pool sizing, env network profile |
+| `SFTPBackendSelectorTests` | Citadel vs Traversio routing |
+| `SFTPListingCacheTests` | Store, invalidate, TTL expiry |
+| `LocalFileReaderTests` | Small-file reads, mmap path, past-end |
+| `TransferBufferPoolTests` | NIO `ByteBuffer` borrow/recycle |
+| `BenchmarkHostInfoTests` | Host metadata in benchmark JSON |
+| `SFTPErrorHelpersTests` | Already-exists detection |
 
-Run: `make test` or `swift test` (**53 tests**: 50 XCTest + 3 Swift Testing).
+Run: `make test` or `swift test` (**79** XCTest + **3** Swift Testing = **82** total). CI entry point: `make check`.
 
 ---
 
@@ -401,8 +438,10 @@ Run: `make test` or `swift test` (**53 tests**: 50 XCTest + 3 Swift Testing).
 | Drag-and-drop (files + folders) | 1 | Done |
 | Overwrite prompts | 1 | Done |
 | Keychain passwords | 1 | Done |
-| Host key TOFU store | 1 | Done |
+| Host key TOFU store | 1 | Done (prompt UI pending) |
 | Configurable logging + transfer tuning | 1 | Done |
+| Apple Silicon preset + performance layer | 1 | Done |
+| CI benchmarks (macos-15) | 1 | Done |
 | SSH agent auth | 1 | Done (Traversio backend) |
 | AppModel coordinator decomposition | 1 | Done |
 | Directory sync / mirror | 2 | Not started |
@@ -438,10 +477,11 @@ Run: `make test` or `swift test` (**53 tests**: 50 XCTest + 3 Swift Testing).
 - [Product specification](spec.md)
 - [User guide](user-guide.md)
 - [Code walkthrough](code-walkthrough.md)
+- [Apple Silicon performance](apple-silicon-performance.md)
 - [TransferBackend protocol](transfer-backend.md)
 - [CLI reference](cli-reference.md) (planned)
 - [SFTP backend spike](spikes/sftp-backend-spike.md)
 
 ---
 
-*End of HLD*
+*End of HLD v0.3*

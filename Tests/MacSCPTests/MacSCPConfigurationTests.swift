@@ -65,10 +65,35 @@ final class MacSCPConfigurationTests: XCTestCase {
         XCTAssertEqual(settings.transfer.chunkSize, 2_097_152)
     }
 
-    func testNetworkProfileFromEnvironment() {
-        XCTAssertEqual(TransferPerformanceTuning.networkProfile(fromEnvironment: "wifi"), .wifi)
-        XCTAssertEqual(TransferPerformanceTuning.networkProfile(fromEnvironment: "WAN"), .wan)
-        XCTAssertEqual(TransferPerformanceTuning.networkProfile(fromEnvironment: nil), .loopback)
+    func testWanPresetAppliesSmallerChunksAndConcurrency() {
+        let toml = """
+        [transfer]
+        preset = "wan"
+        """
+        let settings = MacSCPConfiguration.parseSettings(from: toml)
+        XCTAssertEqual(settings.transfer.preset, .wan)
+        XCTAssertEqual(settings.transfer.maxConcurrentTransfers, 1)
+        XCTAssertEqual(settings.transfer.chunkSize, 262_144)
+        XCTAssertEqual(settings.transfer.maxConcurrentUploads, 4)
+    }
+
+    func testDefaultConfigContentsReflectsPresetValues() {
+        let apple = MacSCPConfiguration.defaultConfigContents(preset: .appleSilicon)
+        XCTAssertTrue(apple.contains("preset = \"apple_silicon\""))
+        XCTAssertTrue(apple.contains("chunk_size = 2097152"))
+
+        let wan = MacSCPConfiguration.defaultConfigContents(preset: .wan)
+        XCTAssertTrue(wan.contains("preset = \"wan\""))
+        XCTAssertTrue(wan.contains("chunk_size = 262144"))
+    }
+
+    func testUseTraversioForPerformanceFlag() {
+        let toml = """
+        [transfer]
+        use_traversio_for_performance = true
+        """
+        let settings = MacSCPConfiguration.parseSettings(from: toml)
+        XCTAssertTrue(settings.transfer.useTraversioForPerformance)
     }
 
     func testParseTransferSettingsFromTOML() {

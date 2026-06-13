@@ -1,6 +1,18 @@
 // SessionCoordinator.swift — SSH/SFTP connect and disconnect lifecycle.
 //
-// Picks backend via SFTPBackendSelector; uses a connection pool sized for Apple Silicon.
+// WHAT THIS FILE DOES
+// -------------------
+// Owns the live TransferBackend while you are connected: picks Citadel vs Traversio,
+// opens one or more SFTP connections (pool), and stores remotePath for the UI.
+//
+// FLOW (connect)
+// --------------
+// 1. Build SessionConfiguration from login form + transfer preset → networkProfile
+// 2. SFTPBackendSelector.select → .citadel or .traversio
+// 3. effectivePoolSize → 1 connection or PooledTransferBackend (Apple Silicon)
+// 4. SessionConnectionService.connect → backend.connect(configuration:)
+//
+// See docs/code-walkthrough.md §4 and §10 for diagrams.
 
 import Foundation
 import MacSCPCore
@@ -29,6 +41,7 @@ final class SessionCoordinator {
         transferSettings = settings
     }
 
+    /// Merges login form with transfer preset so backends know TCP profile (lan/wan/…).
     private func configuredSession(from draft: SessionProfileDraft) -> SessionConfiguration {
         var session = draft.toSessionConfiguration()
         session.networkProfile = TransferPerformanceTuning.networkProfile(from: transferSettings.preset)
@@ -66,6 +79,7 @@ final class SessionCoordinator {
             let poolSize = TransferPerformanceTuning.effectivePoolSize(from: transferSettings)
             let rawBackend: TransferBackend
             if poolSize > 1 {
+                // Multiple SSH sessions so parallel queue jobs don't share one SFTP handle.
                 let pool = PooledTransferBackend(poolSize: poolSize, backendKind: backendKind)
                 try await connectionService.connect(backend: pool, configuration: session)
                 rawBackend = pool

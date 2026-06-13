@@ -2,6 +2,8 @@
 
 MacSCP targets Apple Silicon (arm64) as the primary platform. This guide summarizes tuning options, benchmarks, and CI.
 
+**New to the codebase?** Read [code-walkthrough.md §9](code-walkthrough.md) for a file-by-file tour of the performance modules (each source file has a beginner header comment too).
+
 ## Quick start
 
 On Apple Silicon, set in `~/.macscp/config.toml`:
@@ -24,6 +26,8 @@ On first launch on Apple Silicon, MacSCP writes `preset = "apple_silicon"` (and 
 
 | Feature | Module | Benefit |
 |---|---|---|
+| Presets + TCP math | `TransferPerformanceTuning.swift` | Turns config preset into pool size and socket sizes |
+| Backend routing | `SFTPBackendSelector.swift` | Citadel vs Traversio with logged reason |
 | mmap local reads | `LocalFileSequentialReader` | Fewer copies on large uploads |
 | `ByteBuffer` pool | `TransferBufferPool` | Less allocator churn |
 | Read-ahead SFTP I/O | `CitadelPipelinedWriter/Reader` | Overlap disk and network |

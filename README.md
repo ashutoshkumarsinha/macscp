@@ -1,6 +1,6 @@
 # MacSCP
 
-Open-source, WinSCP-inspired SFTP client for macOS. Phase 1 developer preview: dual-pane commander, transfer queue, recursive directory transfers, SSH agent auth, and configurable logging.
+Open-source, WinSCP-inspired SFTP client for macOS. Phase 1 developer preview: dual-pane commander, transfer queue, recursive directory transfers, SSH agent auth, Apple Silicon performance tuning, and configurable logging.
 
 ## Requirements
 
@@ -12,13 +12,13 @@ Open-source, WinSCP-inspired SFTP client for macOS. Phase 1 developer preview: d
 
 ```text
 Sources/
-  MacSCPCore/         Shared models, TransferBackend protocol, config, directory planner
-  MacSCPBackends/     Citadel + Traversio SFTP backends, shared SFTP helpers
+  MacSCPCore/         Models, TransferBackend protocol, config, performance tuning, BenchmarkHostInfo
+  MacSCPBackends/     Citadel + Traversio SFTP backends, listing cache, TCP tuning, buffer pool
   MacSCPUI/           Transfer queue, overwrite batch types
   MacSCPApp/          SwiftUI app + coordinators (profile, session, panes, transfers)
-  MacSCPBenchmark/    SFTP benchmark harness
+  MacSCPBenchmark/    macscp-benchmark CLI (throughput vs OpenSSH)
 Tests/
-  MacSCPTests/        53 tests (50 XCTest + 3 Swift Testing)
+  MacSCPTests/        82 tests (79 XCTest + 3 Swift Testing)
 scripts/
   benchmark-env.sh    Local OpenSSH SFTP server on port 2222
   run-benchmarks.sh   Start server + run benchmarks (--verify optional)
@@ -34,7 +34,7 @@ scripts/
 
 ```bash
 make build
-make test      # 53 tests (50 XCTest + 3 Swift Testing)
+make test      # 82 tests (79 XCTest + 3 Swift Testing)
 make check     # build + test (CI-friendly)
 make ci        # check + bench-apple-silicon + verify pass criteria
 ```
@@ -61,7 +61,7 @@ Default sample profile connects to `127.0.0.1:2222` with `.benchmark/keys/client
 
 **Authentication:** SSH key file, password (Keychain), or SSH agent (`SSH_AUTH_SOCK`). Agent sessions use the Traversio backend; key/password use Citadel by default.
 
-**Configuration:** `~/.macscp/config.toml` (logging + transfer tuning). On first launch on Apple Silicon, new configs default to `preset = "apple_silicon"`. Logs: `~/.macscp/logs/`. See `make paths` and `make config`.
+**Configuration:** `~/.macscp/config.toml` (logging + transfer tuning). Presets: `default`, `lan`, `wan`, `apple_silicon`. On first launch on Apple Silicon, new configs default to `preset = "apple_silicon"`. Logs: `~/.macscp/logs/`. See `make paths` and `make config`.
 
 ## Development helpers
 
@@ -145,9 +145,9 @@ See [docs/packaging.md](docs/packaging.md) for signing and environment variables
 
 See [docs/README.md](docs/README.md):
 
-- [Product specification](docs/spec.md)
+- [Product specification](docs/spec.md) (v0.3)
 - [High-level design (HLD)](docs/hld.md)
 - [User guide](docs/user-guide.md)
+- [Code walkthrough](docs/code-walkthrough.md) — includes §9 performance file tour
 - [Apple Silicon performance](docs/apple-silicon-performance.md)
-- [Code walkthrough](docs/code-walkthrough.md)
 - SFTP backend spike and CLI reference (planned CLI)

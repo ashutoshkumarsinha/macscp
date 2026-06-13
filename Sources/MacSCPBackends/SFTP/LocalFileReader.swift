@@ -1,8 +1,22 @@
-// LocalFileReader.swift — mmap-backed sequential reads with read-ahead hints (Apple Silicon friendly).
+// LocalFileReader.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Reads local file bytes sequentially for Citadel uploads. Large files use memory-
+// mapping (mmap) so the kernel maps file pages directly instead of copying into RAM.
+//
+// WHO USES IT
+// -----------
+// CitadelPipelinedWriter and CitadelSFTPBackend sequential upload path.
+//
+// BEGINNER TIP
+// ------------
+// Files under 256 KB use a normal FileHandle — mmap overhead is not worth it for
+// tiny files. F_RDADVISE tells macOS we read sequentially (better read-ahead).
 
 import Foundation
 
-/// Sequential local file reader; uses mmap for files ≥ 256 KB.
+/// Reads a local file from start to end, one chunk at a time.
 final class LocalFileSequentialReader: @unchecked Sendable {
     private let mapped: Data?
     private let handle: FileHandle?
@@ -12,6 +26,7 @@ final class LocalFileSequentialReader: @unchecked Sendable {
         let values = try url.resourceValues(forKeys: [.fileSizeKey])
         length = values.fileSize ?? 0
         if length >= 256 * 1024 {
+            // mmap: Data points at file on disk; subdata is cheap.
             mapped = try Data(contentsOf: url, options: [.mappedIfSafe])
             handle = nil
         } else {

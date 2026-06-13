@@ -6,6 +6,13 @@ final class MacSCPCoreTests: XCTestCase {
         let session = SessionConfiguration(host: "example.com", username: "user")
         XCTAssertEqual(session.port, 22)
         XCTAssertEqual(session.protocol, .sftp)
+        XCTAssertEqual(session.networkProfile, .lan)
+    }
+
+    func testSessionConfigurationNetworkProfileCanBeSet() {
+        var session = SessionConfiguration(host: "example.com", username: "user")
+        session.networkProfile = .wan
+        XCTAssertEqual(session.networkProfile, .wan)
     }
 
     func testChecksumDeterministic() throws {

@@ -46,7 +46,7 @@ public struct SessionConfiguration: Codable, Sendable, Equatable {
     public var keyPassphrase: String?
     public var initialRemotePath: String
     public var advanced: AdvancedSettings
-    /// Transfer network profile applied at connect (TCP buffer sizes, Nagle).
+    /// Derived from config preset at connect time; used by CitadelTCPConnector for socket tuning.
     public var networkProfile: TransferNetworkProfile
 
     public init(

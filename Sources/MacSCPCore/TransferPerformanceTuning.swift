@@ -1,15 +1,35 @@
-// TransferPerformanceTuning.swift — Apple Silicon presets and effective transfer limits.
+// TransferPerformanceTuning.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Reads transfer settings from config.toml and turns them into concrete numbers:
+// how many SFTP connections to open, how big TCP buffers should be, etc.
+//
+// WHO USES IT
+// -----------
+// - SessionCoordinator (app connect) — pool size + network profile
+// - MacSCPConfiguration — apple_silicon preset on first launch
+// - CitadelTCPConnector — socket buffer sizes after SSH connect
+// - macscp-benchmark — tags reports with network profile from env vars
+//
+// BEGINNER TIP
+// ------------
+// A "preset" (lan, wan, apple_silicon) is a bundle of defaults. Users can still
+// override individual keys in config.toml after choosing a preset.
 
 import Foundation
 
+/// Describes the kind of network path to the server. Drives TCP tuning values.
 public enum TransferNetworkProfile: String, Sendable, Equatable, Codable {
-    case loopback
-    case lan
-    case wifi
-    case wan
+    case loopback  // Same machine (127.0.0.1 benchmarks)
+    case lan       // Fast wired LAN
+    case wifi      // Wireless — smaller buffers than LAN
+    case wan       // High-latency internet — smaller buffers, Nagle may stay on
 }
 
+/// Helpers that detect Apple Silicon (arm64) and suggest pool sizes.
 public enum AppleSiliconSupport {
+    /// True when this binary runs on arm64 (M1/M2/M3/M4 Macs).
     public static var isAppleSilicon: Bool {
         #if arch(arm64)
         return true
@@ -18,14 +38,18 @@ public enum AppleSiliconSupport {
         #endif
     }
 
-    /// Suggested SFTP connection pool size for parallel queue jobs on Apple Silicon.
+    /// How many parallel SFTP connections the app should prefer on Apple Silicon.
+    /// Uses half the CPU cores, clamped between 2 and 4, so we use P-cores without
+    /// opening too many SSH sessions.
     public static var recommendedPoolSize: Int {
         let cores = ProcessInfo.processInfo.activeProcessorCount
         return min(max(2, cores / 2), 4)
     }
 }
 
+/// Maps config presets and benchmarks to numeric tuning values.
 public enum TransferPerformanceTuning {
+    /// Converts a user-facing preset from config.toml into a network profile for TCP tuning.
     public static func networkProfile(from preset: TransferPerformancePreset) -> TransferNetworkProfile {
         switch preset {
         case .default, .appleSilicon:
@@ -37,14 +61,15 @@ public enum TransferPerformanceTuning {
         }
     }
 
+    /// SO_SNDBUF — how much data the OS may buffer before sending on the wire.
     public static func tcpSendBufferBytes(for profile: TransferNetworkProfile) -> Int {
         switch profile {
         case .loopback, .lan:
-            return 2_097_152
+            return 2_097_152   // 2 MB
         case .wifi:
-            return 1_048_576
+            return 1_048_576   // 1 MB
         case .wan:
-            return 262_144
+            return 262_144     // 256 KB
         }
     }
 
@@ -52,6 +77,8 @@ public enum TransferPerformanceTuning {
         tcpSendBufferBytes(for: profile)
     }
 
+    /// TCP_NODELAY disables Nagle's algorithm (send small packets immediately).
+    /// We turn it OFF on WAN where batching tiny packets can help high-latency links.
     public static func usesTCPNoDelay(for profile: TransferNetworkProfile) -> Bool {
         switch profile {
         case .loopback, .lan, .wifi:
@@ -61,6 +88,8 @@ public enum TransferPerformanceTuning {
         }
     }
 
+    /// How many SFTP connections PooledTransferBackend should open.
+    /// apple_silicon preset on arm64 bumps this up to recommendedPoolSize.
     public static func effectivePoolSize(from settings: MacSCPTransferSettings) -> Int {
         if settings.preset == .appleSilicon, AppleSiliconSupport.isAppleSilicon {
             return max(settings.maxConcurrentTransfers, AppleSiliconSupport.recommendedPoolSize)
@@ -68,10 +97,12 @@ public enum TransferPerformanceTuning {
         return max(1, settings.maxConcurrentTransfers)
     }
 
+    /// When creating config.toml for the first time, arm64 Macs get apple_silicon preset.
     public static func suggestedPresetOnFirstLaunch() -> TransferPerformancePreset? {
         AppleSiliconSupport.isAppleSilicon ? .appleSilicon : nil
     }
 
+    /// Used by macscp-benchmark when MACSCP_BENCH_NETWORK is set (e.g. loopback, wifi).
     public static func networkProfile(fromEnvironment value: String?) -> TransferNetworkProfile {
         switch value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "wifi":

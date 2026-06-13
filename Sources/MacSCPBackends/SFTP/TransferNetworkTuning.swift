@@ -1,9 +1,21 @@
-// TransferNetworkTuning.swift — TCP socket tuning for SFTP backends.
+// TransferNetworkTuning.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Logs TCP tuning values to ~/.macscp/logs so you can confirm which preset was
+// active at connect time. Does not change sockets itself — CitadelTCPConnector
+// applies the actual setOption calls.
+//
+// BEGINNER TIP
+// ------------
+// Enable debug logging in config.toml to see these lines:
+//   level = "debug"
 
 import Foundation
 import MacSCPCore
 
 public enum TransferNetworkTuning {
+    /// Log what we * intend* to apply from a config preset (before connect).
     public static func logIntendedSettings(preset: TransferPerformancePreset) {
         let profile = TransferPerformanceTuning.networkProfile(from: preset)
         logAppliedSettings(
@@ -14,6 +26,7 @@ public enum TransferNetworkTuning {
         )
     }
 
+    /// Log after socket options are set (or when documenting intended values).
     public static func logAppliedSettings(
         profile: TransferNetworkProfile,
         sendBuffer: Int,

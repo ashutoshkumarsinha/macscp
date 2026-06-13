@@ -8,7 +8,8 @@ An open-source, WinSCP-inspired file transfer client rebuilt from the ground up 
 
 | Field | Value |
 |---|---|
-| Version | 0.2 (draft) |
+| Version | 0.3 (draft) |
+| Status | Phase 0–1 in progress; SFTP MVP + Apple Silicon performance layer shipped |
 | Target OS | macOS 15 Sequoia minimum; macOS 26 Tahoe primary |
 | Architecture | Apple Silicon native (arm64); Intel best-effort via Rosetta where feasible |
 | Language | Swift 6 |
@@ -22,6 +23,8 @@ An open-source, WinSCP-inspired file transfer client rebuilt from the ground up 
 | Documentation index | [README.md](README.md) |
 | High-level design | [hld.md](hld.md) |
 | User guide | [user-guide.md](user-guide.md) |
+| Code walkthrough | [code-walkthrough.md](code-walkthrough.md) |
+| Apple Silicon performance | [apple-silicon-performance.md](apple-silicon-performance.md) |
 | SFTP backend spike | [spikes/sftp-backend-spike.md](spikes/sftp-backend-spike.md) |
 | CLI reference | [cli-reference.md](cli-reference.md) |
 | Scripting guide | [scripting.md](scripting.md) |
@@ -62,13 +65,14 @@ MacSCP fills the gap left by WinSCP being Windows-only. macOS users currently ch
 
 ## Success Metrics
 
-| Metric | Target (GA) |
-|---|---|
-| SFTP transfer throughput | ≥ 90% of `sftp` CLI on same network |
-| Cold launch to connected dual-pane | < 3 s (cached session) |
-| Crash-free sessions | > 99.5% |
-| Keychain credential retrieval | < 100 ms |
-| CLI script compatibility | Documented subset of WinSCP scripting verbs |
+| Metric | Target (GA) | Current (Phase 1) |
+|---|---|---|
+| SFTP transfer throughput | ≥ 90% of `sftp` CLI on same network | CI gate: large upload ≥ 0.90× OpenSSH; small upload ≥ 0.80× on loopback (`verify-benchmark-report.sh`) |
+| Cold launch to connected dual-pane | < 3 s (cached session) | Not measured |
+| Crash-free sessions | > 99.5% | Not measured |
+| Keychain credential retrieval | < 100 ms | Not measured |
+| CLI script compatibility | Documented subset of WinSCP scripting verbs | Spec only (`macscp` CLI not shipped) |
+| Unit test coverage (core/backends) | All critical transfer paths covered | **79** XCTest cases + **3** Swift Testing cases (`make check`) |
 
 ---
 
@@ -124,7 +128,7 @@ All protocol implementations live behind a shared **`TransferBackend`** protocol
 
 | Protocol | Priority | Notes |
 |---|---|---|
-| **SFTP** | P0 (MVP) | Primary; via [swift-nio-ssh](https://github.com/apple/swift-nio-ssh) or libssh2 wrapper |
+| **SFTP** | P0 (MVP) | **Shipped:** [Citadel](https://github.com/orlandos-nl/Citadel) (NIOSSH + SFTP v3) for key/password; [Traversio](https://github.com/GitSwiftHQ/Traversio) for SSH agent and optional max-throughput mode (AGPL — legal review before default) |
 | **SCP** | P1 | Legacy one-shot copies; prefer SFTP for interactive use |
 | **FTP** | P1 | Active/passive mode, MLSD, UTF-8 |
 | **FTPS** | P1 | Explicit (AUTH TLS) and implicit TLS |
@@ -138,7 +142,46 @@ All protocol implementations live behind a shared **`TransferBackend`** protocol
 - Timeout, keep-alive, and auto-reconnect with exponential backoff.
 - **Host key / certificate verification** with trust-on-first-use (TOFU) store and fingerprint display.
 - Resume interrupted transfers (offset resume for SFTP; REST for FTP where supported).
-- Concurrent transfer workers (default 4; configurable 1–16).
+- Concurrent transfer workers (default from `config.toml`; presets tune pool size, pipelined reads/writes, and batch uploads).
+- **Transfer performance presets** (`default`, `lan`, `wan`, `apple_silicon`) in `~/.macscp/config.toml` — see §2.3.
+- **Backend selection:** Citadel for key/password by default; Traversio when auth method is SSH agent or `use_traversio_for_performance = true`.
+- **TCP tuning (Citadel):** post-connect `SO_SNDBUF`, `SO_RCVBUF`, and `TCP_NODELAY` derived from active preset / network profile.
+- **Listing cache:** 3 s TTL on remote directory listings (Citadel and Traversio).
+- **Optional streaming checksums** during upload when `verify_checksums = true`.
+
+### 2.3 Application Configuration (`~/.macscp/config.toml`)
+
+Global tuning and logging live outside session profiles. First launch on Apple Silicon writes `preset = "apple_silicon"` automatically; Intel Macs get `preset = "default"`.
+
+```toml
+[logging]
+enabled = true
+level = "debug"
+retention_days = 14
+mirror_stderr = false
+
+[transfer]
+preset = "default"                    # default | lan | wan | apple_silicon
+max_concurrent_transfers = 2          # SSH connection pool size (elevated by apple_silicon on arm64)
+max_concurrent_writes = 16
+max_concurrent_reads = 8
+max_concurrent_uploads = 12
+chunk_size = 1048576                  # bytes; apple_silicon uses 2097152
+resume = true
+verify_checksums = false
+use_traversio_for_performance = false # optional Traversio for key/password (AGPL)
+```
+
+| Preset | Intended use | Key defaults |
+|---|---|---|
+| `default` | General / Intel Mac | 1 MB chunks, modest concurrency |
+| `lan` | Fast wired LAN | Higher concurrency, 2 MB chunks |
+| `wan` | High-latency internet | Smaller chunks, single connection pool, TCP_NODELAY off |
+| `apple_silicon` | M-series Mac (auto on first arm64 launch) | Pool sized to performance cores (2–4), 2 MB chunks, 24 upload workers |
+
+Explicit keys in `[transfer]` override preset values. See [apple-silicon-performance.md](apple-silicon-performance.md) and [user-guide.md](user-guide.md) §5.4.
+
+**Benchmark environment:** `MACSCP_BENCH_NETWORK` (`loopback` | `lan` | `wifi` | `wan`) tags `macscp-benchmark` reports via `BenchmarkHostInfo` in `MacSCPCore`.
 
 ### 2.2 Session Profile Schema
 
@@ -346,45 +389,94 @@ Classic source-list sidebar (groups + saved sessions) and dense detail panel. Fo
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│  SwiftUI + AppKit Shell (Windows, Tabs, Preferences)        │
+│  MacSCPApp — SwiftUI + AppKit (coordinators, commander UI)  │
 ├─────────────────────────────────────────────────────────────┤
-│  SessionManager · TransferQueue · SyncEngine · EditorBridge │
+│  MacSCPUI — TransferQueue · overwrite batch model           │
 ├─────────────────────────────────────────────────────────────┤
-│  TransferBackend (protocol)                                 │
-│    ├─ SFTPBackend (NIO / libssh2)                           │
-│    ├─ FTPBackend                                            │
-│    ├─ WebDAVBackend                                         │
-│    └─ S3Backend (AWS SDK Swift)                             │
+│  MacSCPCore — TransferBackend protocol · config · models    │
+│    TransferPerformanceTuning · BenchmarkHostInfo            │
 ├─────────────────────────────────────────────────────────────┤
-│  KeychainService · TrustStore · ProfileStore (JSON/SQLite)  │
+│  MacSCPBackends — SFTP implementations                      │
+│    ├─ CitadelSFTPBackend (+ TCP tuning, listing cache)      │
+│    ├─ TraversioSFTPBackend (agent auth, optional perf mode) │
+│    └─ PooledTransferBackend · pipelined read/write          │
+├─────────────────────────────────────────────────────────────┤
+│  Keychain · ProfileStore · known_hosts (TOFU) · config.toml │
 └─────────────────────────────────────────────────────────────┘
          ▲                              ▲
-         │ macscp CLI                   │ XPC (future: Finder Sync)
+         │ macscp-benchmark CLI         │ macscp CLI (planned)
          └──────────────────────────────┘
 ```
+
+Future backends (FTP, WebDAV, S3) implement the same `TransferBackend` surface without changing UI layers.
 
 ### 7.1 Module Layout (Swift Package)
 
 | Module | Responsibility |
 |---|---|
-| `MacSCPCore` | Models, protocols, profile schema, transfer abstractions |
-| `MacSCPBackends` | Protocol implementations |
-| `MacSCPApp` | GUI target |
-| `MacSCPCLI` | Command-line target |
-| `MacSCPTests` / `MacSCPIntegrationTests` | Unit + protocol conformance tests against Docker fixtures |
+| `MacSCPCore` | `TransferBackend` protocol, session/transfer models, `MacSCPConfiguration`, `TransferPerformanceTuning`, `BenchmarkHostInfo`, directory planner, logging |
+| `MacSCPBackends` | Citadel and Traversio SFTP backends, connection pool, pipelined I/O, listing cache, local file mmap reader, buffer pool |
+| `MacSCPUI` | Background transfer queue, job state machine, overwrite batch types (shared by app and tests) |
+| `MacSCPApp` | SwiftUI executable, coordinator decomposition, session profiles, dual-pane commander |
+| `MacSCPBenchmark` | `macscp-benchmark` CLI — throughput comparison vs OpenSSH (`make bench-apple-silicon`) |
+| `MacSCPTests` | Unit and integration tests against local OpenSSH fixture (port 2222); **79** XCTest + **3** Swift Testing cases |
+
+Planned: `MacSCPCLI` user-facing automation binary (Phase 2).
 
 ### 7.2 Persistence
 
-- **Profiles:** `~/Library/Application Support/MacSCP/profiles.json` (or SQLite for large installs).
-- **Trust store:** `~/Library/Application Support/MacSCP/known_hosts` (OpenSSH-compatible format).
-- **Transfer history:** optional, user-enabled, local only.
+- **Profiles:** `~/Library/Application Support/MacSCP/profiles.json` (JSON, mode 600).
+- **Application config:** `~/.macscp/config.toml` — logging and transfer presets (§2.3).
+- **Trust store:** `~/.macscp/known_hosts.json` (TOFU fingerprints).
+- **Logs:** `~/.macscp/logs/macscp-YYYY-MM-DD.log` (daily rotation).
+- **Transfer history:** optional, user-enabled, local only (not implemented).
 
-### 7.3 Dependencies (Initial)
+### 7.3 Dependencies (Current)
 
-- Swift NIO / swift-nio-ssh (SFTP)
-- swift-crypto (checksums, key handling)
-- aws-sdk-swift (S3, optional GCS interop)
-- ArgumentParser (CLI)
+| Package | Role |
+|---|---|
+| [Citadel](https://github.com/orlandos-nl/Citadel) | Default SFTP backend (NIOSSH) |
+| [Traversio](https://github.com/GitSwiftHQ/Traversio) | SSH agent auth; optional performance backend |
+| [swift-crypto](https://github.com/apple/swift-crypto) | Checksums, key handling |
+| [swift-argument-parser](https://github.com/apple/swift-argument-parser) | `macscp-benchmark` CLI |
+| [swift-log](https://github.com/apple/swift-log) | Structured logging in benchmark target |
+
+Future (Phase 3+): aws-sdk-swift (S3), additional protocol clients.
+
+### 7.4 Quality Assurance & Benchmarks
+
+**CI** (`.github/workflows/ci.yml`, runner `macos-15` Apple Silicon):
+
+1. `make check` — build + unit tests
+2. `make bench-apple-silicon` — SFTP throughput suite with `hostInfo` metadata
+3. `./scripts/verify-benchmark-report.sh` — fail when pass criteria not met
+
+Local parity: `./scripts/ci-local.sh` or `make ci`.
+
+**Pass criteria** (loopback, vs OpenSSH `sftp`):
+
+| Scenario | Minimum ratio |
+|---|---|
+| Large-file upload | ≥ 0.90× |
+| Small-file batch upload | ≥ 0.80× |
+
+Reports: `.benchmark/benchmark-results/report.json`. Fixture: `./scripts/benchmark-env.sh start` (OpenSSH on `127.0.0.1:2222`).
+
+**Test suites** (representative):
+
+| Suite | Coverage |
+|---|---|
+| `TransferPerformanceTuningTests` | Presets, TCP buffers, pool sizing, env network profile |
+| `MacSCPConfigurationTests` | TOML parsing, presets, first-launch arm64 defaults |
+| `SFTPBackendSelectorTests` | Citadel vs Traversio routing |
+| `SFTPListingCacheTests` | TTL cache hit/miss/invalidate |
+| `LocalFileReaderTests` | Small-file reads and mmap path (≥ 256 KB) |
+| `TransferBufferPoolTests` | NIO `ByteBuffer` reuse |
+| `StreamingChecksumTests` | Incremental SHA-256 vs one-shot |
+| `BenchmarkHostInfoTests` | Host metadata in benchmark JSON |
+| `TransferQueueTests` | Cancel, disconnect, skip policy (mock backend) |
+
+Run: `make test` or `swift test`.
 
 ---
 
@@ -403,18 +495,23 @@ Classic source-list sidebar (groups + saved sessions) and dense detail panel. Fo
 
 ### Phase 0 — Foundation (4–6 weeks)
 
-- [ ] Swift package skeleton, CI (build + test on macOS 15/26)
-- [ ] Profile model + Keychain storage
-- [ ] Session login UI (§6.1)
-- [ ] SFTP connect/list/upload/download/delete
-- [ ] Dual-pane commander (read-only remote OK first)
+- [x] Swift package skeleton, CI (build + test + benchmarks on macOS 15 Apple Silicon — `.github/workflows/ci.yml`)
+- [x] Profile model + Keychain storage
+- [x] Session login UI (§6.1)
+- [x] SFTP connect/list/upload/download/delete (Citadel + Traversio backends)
+- [x] Dual-pane commander
 
 ### Phase 1 — MVP (8–10 weeks)
 
-- [ ] Transfer queue with progress, pause, resume
-- [ ] Host key verification UI
-- [ ] Rename, mkdir, chmod, properties
-- [ ] Drag-and-drop upload/download
+- [x] Transfer queue with progress and cancel
+- [ ] Host key verification UI (TOFU store implemented; prompt UI pending)
+- [ ] Rename, mkdir, chmod, properties (backend APIs partial; UI incomplete)
+- [x] Drag-and-drop upload/download (files and folders)
+- [x] Overwrite prompts (skip / rename / overwrite)
+- [x] SSH agent authentication (Traversio backend)
+- [x] Configurable logging + transfer tuning (`~/.macscp/config.toml`)
+- [x] Apple Silicon performance layer (presets, TCP tuning, pool, listing cache, mmap reads)
+- [x] CI benchmark gate vs OpenSSH (`verify-benchmark-report.sh`)
 - [ ] Internal + external remote editor
 - [ ] Directory compare + one-way sync
 - [ ] `macscp` CLI: open, get, put, ls, exit codes
@@ -441,13 +538,14 @@ Classic source-list sidebar (groups + saved sessions) and dense detail panel. Fo
 
 ## 10. Open Questions
 
-| # | Question | Recommendation |
+| # | Question | Status / recommendation |
 |---|---|---|
-| 1 | Swift NIO SSH vs libssh2 for SFTP? | Spike both; pick by throughput + maintenance |
+| 1 | Swift NIO SSH vs libssh2 for SFTP? | **Resolved:** Citadel (NIOSSH) default; Traversio for agent/optional perf (see [SFTP spike](spikes/sftp-backend-spike.md)) |
 | 2 | Sandbox enabled at ship? | Yes, with user-granted folder bookmarks |
 | 3 | Ship on Mac App Store? | Direct + Homebrew first; MAS later if sandbox feasible |
 | 4 | Master password vs pure Keychain? | Both: Keychain default, master password for exports |
 | 5 | Explorer mode in v1? | Defer to Phase 2 |
+| 6 | Traversio as default backend? | **Open:** AGPL-3.0 — legal review before wide distribution; opt-in via `use_traversio_for_performance` |
 
 ---
 
@@ -459,23 +557,27 @@ Classic source-list sidebar (groups + saved sessions) and dense detail panel. Fo
 | **Commander** | Dual-pane local/remote file manager layout |
 | **Live sync** | Automatic upload on local filesystem change |
 | **Backend** | Protocol-specific adapter implementing `TransferBackend` |
+| **Preset** | Named bundle of transfer defaults in `config.toml` (`lan`, `wan`, `apple_silicon`, etc.) |
+| **Network profile** | Derived TCP tuning class (`loopback`, `lan`, `wifi`, `wan`) used for socket buffer sizes |
+| **Connection pool** | Multiple parallel SSH/SFTP sessions (`PooledTransferBackend`) sized by preset and CPU cores |
 
 ---
 
 ## Appendix A — WinSCP Feature Mapping
 
-| WinSCP | MacSCP | Phase |
-|---|---|---|
-| Site Manager | Session sidebar + profile editor | 0 |
-| Commander interface | Dual-pane commander | 0–1 |
-| Synchronize directories | Compare + sync dialog | 1–2 |
-| Keep Remote Directory Up To Date | Live sync | 2 |
-| Integrated editor | Internal + external editor | 1 |
-| PuTTY integration | Terminal / iTerm hand-off | 2 |
-| Scripting / `winscp.com` | `macscp` CLI + script files | 1–2 |
-| .NET assembly | Swift `MacSCPCore` library (documented API) | 3 |
-| Master password | Export encryption + optional app lock | 1–2 |
+| WinSCP | MacSCP | Phase | Status |
+|---|---|---|---|
+| Site Manager | Session sidebar + profile editor | 0 | Done |
+| Commander interface | Dual-pane commander | 0–1 | Done |
+| Synchronize directories | Compare + sync dialog | 1–2 | Not started |
+| Keep Remote Directory Up To Date | Live sync | 2 | Not started |
+| Integrated editor | Internal + external editor | 1 | Not started |
+| PuTTY integration | Terminal / iTerm hand-off | 2 | Not started |
+| Scripting / `winscp.com` | `macscp` CLI + script files | 1–2 | Spec only |
+| Performance tuning | Transfer presets + Apple Silicon layer | 1 | Done |
+| .NET assembly | Swift `MacSCPCore` library (documented API) | 3 | Partial (library exists) |
+| Master password | Export encryption + optional app lock | 1–2 | Not started |
 
 ---
 
-*End of specification v0.2*
+*End of specification v0.3*

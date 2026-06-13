@@ -1,6 +1,6 @@
 # MacSCP Documentation
 
-Design and implementation references for the MacSCP project. All documents align with [spec.md](spec.md) v0.2.
+Design and implementation references for the MacSCP project. All documents align with [spec.md](spec.md) v0.3.
 
 | Document | Description |
 |---|---|
@@ -19,7 +19,7 @@ Design and implementation references for the MacSCP project. All documents align
 ## Quick commands
 
 ```bash
-make build test   # compile + 53 tests
+make build test   # compile + 82 tests
 make run          # local SFTP fixture + launch app
 make paths        # ~/.macscp paths, profiles, known hosts
 make bench                 # SFTP throughput benchmarks

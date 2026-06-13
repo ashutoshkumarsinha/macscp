@@ -50,6 +50,7 @@ final class TransferCoordinator {
                 do {
                     onStatusMessage?("Scanning \(entry.name)…")
                     let remoteBase = SFTPPathJoin.joinRemote(remotePath, entry.name)
+                    // Walk local tree off the main thread so the UI stays responsive.
                     let files = try await Task.detached(priority: .userInitiated) {
                         try DirectoryTransferPlanner.expandLocalDirectory(at: dirURL, remoteBase: remoteBase)
                     }.value

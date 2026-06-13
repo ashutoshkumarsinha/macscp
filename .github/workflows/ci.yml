@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: macos-15  # Apple Silicon
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -17,6 +19,9 @@ jobs:
 
   benchmark:
     runs-on: macos-15  # Apple Silicon
+    permissions:
+      contents: read
+      actions: write  # upload-artifact
     steps:
       - uses: actions/checkout@v4
 

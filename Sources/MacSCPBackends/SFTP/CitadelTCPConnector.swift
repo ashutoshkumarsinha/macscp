@@ -1,4 +1,19 @@
-// CitadelTCPConnector.swift — TCP socket tuning for Citadel SSH connections.
+// CitadelTCPConnector.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Opens Citadel SSH connections and applies TCP socket tuning (buffer sizes and
+// TCP_NODELAY) based on the session's network profile (from config preset).
+//
+// WHY A SEPARATE FILE
+// -------------------
+// Citadel's public connect API does not expose bootstrap socket options. We connect
+// normally, then adjust the underlying NIO channel before SFTP traffic starts.
+//
+// BEGINNER TIP
+// ------------
+// networkProfile travels on SessionConfiguration, set by SessionCoordinator from
+// the user's preset in config.toml (lan / wan / apple_silicon).
 
 @preconcurrency import Citadel
 import Foundation
@@ -6,11 +21,13 @@ import MacSCPCore
 import NIO
 
 enum CitadelTCPConnector {
+    /// Connect to SSH via Citadel, then tune the TCP socket for the active preset.
     static func connect(
         configuration: SessionConfiguration,
         authenticationMethod: SSHAuthenticationMethod,
         hostKeyValidator: SSHHostKeyValidator
     ) async throws -> SSHClient {
+        // Step 1: Standard Citadel SSH handshake (same as before performance work).
         let client = try await SSHClient.connect(
             host: configuration.host,
             port: configuration.port,
@@ -22,6 +39,7 @@ enum CitadelTCPConnector {
             )
         )
 
+        // Step 2: Apply preset-specific socket options on the live connection.
         let profile = configuration.networkProfile
         try await applySocketTuning(
             to: client,
@@ -33,6 +51,7 @@ enum CitadelTCPConnector {
         return client
     }
 
+    /// Sets SO_SNDBUF, SO_RCVBUF, and TCP_NODELAY on the NIO channel's event loop.
     private static func applySocketTuning(
         to client: SSHClient,
         profile: TransferNetworkProfile,
@@ -40,8 +59,10 @@ enum CitadelTCPConnector {
         receiveBuffer: Int,
         tcpNoDelay: Bool
     ) async throws {
+        // Citadel does not expose its TCP channel publicly; reflection finds it.
         guard let channel = citadelChannel(from: client) else { return }
 
+        // Socket options must be set on the channel's event loop (NIO requirement).
         try await channel.eventLoop.submit {
             guard let options = channel.syncOptions else { return }
             try options.setOption(
@@ -66,6 +87,7 @@ enum CitadelTCPConnector {
         )
     }
 
+    /// Walks SSHClient's internal session to get the NIO Channel (not public API).
     private static func citadelChannel(from client: SSHClient) -> Channel? {
         for child in Mirror(reflecting: client).children {
             guard child.label == "session" else { continue }

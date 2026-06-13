@@ -1,5 +1,17 @@
+// BenchmarkHostInfo.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Collects machine metadata when macscp-benchmark runs so JSON reports record
+// whether results came from Apple Silicon, how many cores, and which network
+// profile was simulated (MACSCP_BENCH_NETWORK env var).
+//
+// BEGINNER TIP
+// ------------
+// Compare reports over time only on similar hostInfo — loopback on an M2 Mac
+// is not comparable to wifi on an Intel Mac without context.
+
 import Foundation
-import MacSCPCore
 
 public struct BenchmarkHostInfo: Codable, Sendable {
     public var architecture: String

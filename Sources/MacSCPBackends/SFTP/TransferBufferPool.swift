@@ -1,4 +1,18 @@
-// TransferBufferPool.swift — Reuse NIO ByteBuffer allocations across transfer chunks.
+// TransferBufferPool.swift
+//
+// WHAT THIS FILE DOES
+// -------------------
+// Reuses NIO ByteBuffer objects between upload chunks instead of allocating a new
+// buffer for every SFTP write (reduces GC/allocator pressure during large transfers).
+//
+// WHO USES IT
+// -----------
+// CitadelSFTPBackend sequential upload and CitadelPipelinedWriter.
+//
+// BEGINNER TIP
+// ------------
+// Call borrow(capacity:) before filling a chunk, recycle(_:) when done. The pool
+// keeps at most 8 buffers; extras are dropped and can be garbage-collected.
 
 import Foundation
 import NIO
