@@ -1,3 +1,5 @@
+// CitadelPipelinedWriter.swift — Overlapping SFTP WRITE requests for faster uploads.
+
 import Citadel
 import Foundation
 import MacSCPCore
@@ -36,6 +38,7 @@ enum CitadelPipelinedWriter {
         var readOffset = startOffset
         var confirmedOffset = startOffset
         var inFlight: [(offset: UInt64, length: Int, task: Task<Void, Error>)] = []
+        var inFlightHead = 0
         let startTime = Date()
 
         func reportProgress() {
@@ -55,17 +58,22 @@ enum CitadelPipelinedWriter {
             )
         }
 
+        defer {
+            for index in inFlightHead ..< inFlight.count {
+                inFlight[index].task.cancel()
+            }
+        }
+
         do {
-            while confirmedOffset < UInt64(totalSize) || !inFlight.isEmpty {
+            while confirmedOffset < UInt64(totalSize) || inFlightHead < inFlight.count {
                 if cancellation?.isCancelled == true || Task.isCancelled {
-                    for item in inFlight { item.task.cancel() }
                     throw BackendError.cancelled
                 }
                 try cancellation?.throwIfCancelled()
-                while inFlight.count < window, readOffset < UInt64(totalSize) {
+
+                while inFlight.count - inFlightHead < window, readOffset < UInt64(totalSize) {
                     let remaining = totalSize - Int(readOffset)
                     let chunkLength = min(sftpPacketSize, remaining)
-                    try readHandle.seek(toOffset: readOffset)
                     guard let chunk = try readHandle.read(upToCount: chunkLength), !chunk.isEmpty else {
                         break
                     }
@@ -79,9 +87,10 @@ enum CitadelPipelinedWriter {
                     inFlight.append((writeOffset, chunk.count, writeTask))
                 }
 
-                guard !inFlight.isEmpty else { break }
+                guard inFlightHead < inFlight.count else { break }
 
-                let next = inFlight.removeFirst()
+                let next = inFlight[inFlightHead]
+                inFlightHead += 1
                 do {
                     try await next.task.value
                 } catch is CancellationError {
@@ -91,9 +100,6 @@ enum CitadelPipelinedWriter {
                 reportProgress()
             }
         } catch {
-            for item in inFlight {
-                item.task.cancel()
-            }
             throw error
         }
 

@@ -1,13 +1,9 @@
 import CoreTransferable
 import Foundation
+import MacSCPCore
 import UniformTypeIdentifiers
 
 struct PaneDragPayload: Codable, Hashable, Transferable {
-    enum PaneSide: String, Codable {
-        case local
-        case remote
-    }
-
     var side: PaneSide
     var fileNames: [String]
 
@@ -20,19 +16,14 @@ enum FilePaneSide {
     case local
     case remote
 
-    var dragSide: PaneDragPayload.PaneSide {
+    var dragSide: PaneSide {
         switch self {
         case .local: .local
         case .remote: .remote
         }
     }
 
-    func acceptsDrop(from source: PaneDragPayload.PaneSide) -> Bool {
-        switch (self, source) {
-        case (.remote, .local), (.local, .remote):
-            return true
-        default:
-            return false
-        }
+    func acceptsDrop(from source: PaneSide) -> Bool {
+        PaneTransferRules.acceptsDrop(from: source, to: dragSide)
     }
 }

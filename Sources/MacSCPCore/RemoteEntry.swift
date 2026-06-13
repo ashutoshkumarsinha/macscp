@@ -1,3 +1,5 @@
+// RemoteEntry.swift — One row in a remote directory listing (like ls -l output).
+
 import Foundation
 
 public enum EntryType: Sendable, Equatable {
@@ -6,6 +8,7 @@ public enum EntryType: Sendable, Equatable {
     case symlink
 }
 
+// Unix permission bits (e.g. 0o644) for remote files.
 public struct FilePermissions: Sendable, Equatable {
     public var octal: UInt32
 
@@ -14,11 +17,12 @@ public struct FilePermissions: Sendable, Equatable {
     }
 }
 
+// Describes one file or folder on the remote server.
 public struct RemoteEntry: Sendable, Equatable {
     public var name: String
-    public var path: String
+    public var path: String          // Full remote path
     public var type: EntryType
-    public var size: Int64?
+    public var size: Int64?          // nil for some directories
     public var modified: Date?
     public var permissions: FilePermissions?
 

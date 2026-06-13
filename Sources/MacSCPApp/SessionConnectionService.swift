@@ -1,3 +1,5 @@
+// SessionConnectionService.swift — Thin connect/disconnect wrapper around TransferBackend.
+
 import Foundation
 import MacSCPCore
 

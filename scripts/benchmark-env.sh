@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# Start/stop a local OpenSSH SFTP server for MacSCP benchmarks (port 2222).
+# Start/stop a local OpenSSH SFTP server for MacSCP development and benchmarks.
+#
+# Port 2222 by default. Keys and data live under .benchmark/
+# Used by: make server-start, make run, make bench
+#
+# Usage:
+#   ./scripts/benchmark-env.sh start|stop|restart|status
+#   MACSCP_BENCH_PORT=2223 ./scripts/benchmark-env.sh start
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

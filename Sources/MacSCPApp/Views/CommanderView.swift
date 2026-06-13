@@ -1,3 +1,5 @@
+// CommanderView.swift — Dual-pane file browser, toolbar transfers, drag-and-drop.
+
 import SwiftUI
 import MacSCPCore
 
@@ -15,7 +17,7 @@ struct CommanderView: View {
                     subtitle: appModel.localPath.path,
                     entries: appModel.localEntries.map { .local($0) },
                     selection: Bindable(appModel).selectedLocalNames,
-                    onRefresh: { appModel.refreshLocal() },
+                    onRefresh: { Task { await appModel.refreshLocal() } },
                     onUp: { appModel.navigateLocalUp() },
                     onOpen: { entry in
                         if case let .local(local) = entry, local.isDirectory {
@@ -23,7 +25,7 @@ struct CommanderView: View {
                         }
                     },
                     onDropFromOpposite: { payload in
-                        appModel.downloadDropped(fileNames: payload.fileNames)
+                        Task { await appModel.downloadDropped(fileNames: payload.fileNames) }
                     }
                 )
                 FilePaneView(
@@ -40,7 +42,7 @@ struct CommanderView: View {
                         }
                     },
                     onDropFromOpposite: { payload in
-                        appModel.uploadDropped(fileNames: payload.fileNames)
+                        Task { await appModel.uploadDropped(fileNames: payload.fileNames) }
                     }
                 )
             }
@@ -80,8 +82,10 @@ struct CommanderView: View {
             .help("Up (both panes)")
 
             Button("", systemImage: "arrow.clockwise") {
-                appModel.refreshLocal()
-                Task { await appModel.refreshRemote() }
+                Task {
+                    await appModel.refreshLocal()
+                    await appModel.refreshRemote()
+                }
             }
             .help("Refresh")
 
@@ -89,7 +93,7 @@ struct CommanderView: View {
                 .frame(height: 20)
 
             Button {
-                appModel.uploadSelected()
+                Task { await appModel.uploadSelected() }
             } label: {
                 Label("Upload", systemImage: "arrow.right.circle")
             }
@@ -97,7 +101,7 @@ struct CommanderView: View {
             .help("Upload selected local files to remote")
 
             Button {
-                appModel.downloadSelected()
+                Task { await appModel.downloadSelected() }
             } label: {
                 Label("Download", systemImage: "arrow.left.circle")
             }
@@ -265,7 +269,7 @@ struct FilePaneView: View {
 
         if let payload = dragPayload(for: entry) {
             content.draggable(payload) {
-                Label(entry.name, systemImage: "doc")
+                Label(entry.name, systemImage: entry.isDirectory ? "folder" : "doc")
                     .padding(8)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
             }
@@ -275,10 +279,10 @@ struct FilePaneView: View {
     }
 
     private func dragPayload(for entry: PaneEntry) -> PaneDragPayload? {
-        guard !entry.isDirectory else { return nil }
+        // Directories are draggable; TransferCoordinator expands them before enqueue.
         let names: [String]
         if selection.contains(entry.name) {
-            names = entries.filter { selection.contains($0.name) && !$0.isDirectory }.map(\.name)
+            names = entries.filter { selection.contains($0.name) }.map(\.name)
         } else {
             names = [entry.name]
         }

@@ -1,290 +1,252 @@
+// AppModel.swift — Thin facade over coordinators; SwiftUI binds here via @Observable.
+//
+// AppModel forwards state to views and implements TransferBackendProvider for the queue.
+// Business logic lives in Coordinators/ (profile, session, panes, transfers).
+
 import Foundation
 import MacSCPCore
 import MacSCPBackends
+import MacSCPUI
 import Observation
 
 @MainActor
 @Observable
 final class AppModel: TransferBackendProvider {
-    var profiles: [SessionProfile] = []
-    var selectedProfileID: UUID?
-    var draft = SessionProfileDraft()
-    var isConnected = false
-    var isConnecting = false
-    var showLogin = true
+    private let profileCoordinator = ProfileCoordinator()
+    private let sessionCoordinator = SessionCoordinator()
+    let localPane = LocalPaneCoordinator()
+    let remotePane = RemotePaneCoordinator()
+    let transfers = TransferCoordinator()
+
     var statusMessage = "Ready"
-    var localPath: URL = FileManager.default.homeDirectoryForCurrentUser
-    var remotePath = "/"
-    var localEntries: [LocalEntry] = []
-    var remoteEntries: [RemoteEntry] = []
-    var activeSessionName = ""
-    var selectedLocalNames = Set<String>()
-    var selectedRemoteNames = Set<String>()
-    var overwritePrompt: PendingTransferBatch?
-    let transferQueue = TransferQueue()
+    private var paneRefreshTask: Task<Void, Never>?
 
-    private var backend: TransferBackend?
-    private let profileStore = ProfileStore()
-    private let connectionService = SessionConnectionService()
+    var currentBackend: TransferBackend? { sessionCoordinator.backend }
 
-    var currentBackend: TransferBackend? { backend }
+    // MARK: - Forwarded state for views
+
+    var profiles: [SessionProfile] {
+        get { profileCoordinator.profiles }
+        set { profileCoordinator.profiles = newValue }
+    }
+
+    var selectedProfileID: UUID? {
+        get { profileCoordinator.selectedProfileID }
+        set { profileCoordinator.selectedProfileID = newValue }
+    }
+
+    var draft: SessionProfileDraft {
+        get { profileCoordinator.draft }
+        set { profileCoordinator.draft = newValue }
+    }
+
+    var isConnected: Bool {
+        get { sessionCoordinator.isConnected }
+        set { sessionCoordinator.isConnected = newValue }
+    }
+
+    var isConnecting: Bool {
+        get { sessionCoordinator.isConnecting }
+        set { sessionCoordinator.isConnecting = newValue }
+    }
+
+    var showLogin: Bool {
+        get { sessionCoordinator.showLogin }
+        set { sessionCoordinator.showLogin = newValue }
+    }
+
+    var remotePath: String {
+        get { sessionCoordinator.remotePath }
+        set { sessionCoordinator.remotePath = newValue }
+    }
+
+    var activeSessionName: String {
+        get { sessionCoordinator.activeSessionName }
+        set { sessionCoordinator.activeSessionName = newValue }
+    }
+
+    var localPath: URL {
+        get { localPane.localPath }
+        set { localPane.localPath = newValue }
+    }
+
+    var localEntries: [LocalEntry] {
+        get { localPane.localEntries }
+        set { localPane.localEntries = newValue }
+    }
+
+    var remoteEntries: [RemoteEntry] {
+        get { remotePane.remoteEntries }
+        set { remotePane.remoteEntries = newValue }
+    }
+
+    var selectedLocalNames: Set<String> {
+        get { localPane.selectedLocalNames }
+        set { localPane.selectedLocalNames = newValue }
+    }
+
+    var selectedRemoteNames: Set<String> {
+        get { remotePane.selectedRemoteNames }
+        set { remotePane.selectedRemoteNames = newValue }
+    }
+
+    var overwritePrompt: PendingTransferBatch? {
+        get { transfers.overwritePrompt }
+        set { transfers.overwritePrompt = newValue }
+    }
+
+    var transferQueue: TransferQueue { transfers.transferQueue }
 
     init() {
-        profiles = profileStore.load()
-        if profiles.isEmpty {
-            profiles = SessionProfile.sampleProfiles
+        wireCoordinators()
+
+        if let settings = try? MacSCPConfiguration.loadSettings(
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        ) {
+            transfers.applyTransferSettings(settings.transfer)
         }
-        selectedProfileID = profiles.first?.id
-        syncDraftFromSelection()
-        refreshLocal()
-        transferQueue.bind(backendProvider: self)
+
+        transfers.bind(backendProvider: self)
+        Task { await refreshLocal() }
+        MacSCPLogger.shared.info("MacSCP started (profiles: \(profiles.count))", category: .app)
     }
 
-    func syncDraftFromSelection() {
-        guard let id = selectedProfileID,
-              let profile = profiles.first(where: { $0.id == id }) else { return }
-        draft = SessionProfileDraft(from: profile)
-    }
-
-    func selectProfile(_ id: UUID) {
-        selectedProfileID = id
-        syncDraftFromSelection()
-    }
-
-    func saveDraftAsProfile() {
-        let profile = draft.toProfile(existingID: selectedProfileID)
-        if let index = profiles.firstIndex(where: { $0.id == profile.id }) {
-            profiles[index] = profile
-        } else {
-            profiles.append(profile)
+    private func wireCoordinators() {
+        // Route coordinator status updates into the single status bar string.
+        let setStatus: (String) -> Void = { [weak self] message in
+            self?.statusMessage = message
         }
-        selectedProfileID = profile.id
-        profileStore.save(profiles)
-        statusMessage = "Saved profile \"\(profile.name)\""
+
+        profileCoordinator.onStatusMessage = setStatus
+        sessionCoordinator.onStatusMessage = setStatus
+        remotePane.onStatusMessage = setStatus
+        transfers.onStatusMessage = setStatus
+
+        sessionCoordinator.onConnected = { [weak self] in
+            await self?.refreshRemote()
+        }
+
+        sessionCoordinator.onDisconnected = { [weak self] in
+            // Fail queued jobs and clear remote pane when the SSH session ends.
+            self?.transfers.handleDisconnect()
+            self?.paneRefreshTask?.cancel()
+            self?.paneRefreshTask = nil
+            self?.remotePane.remoteEntries = []
+            self?.remotePane.selectedRemoteNames = []
+        }
+
+        transfers.onTransferComplete = { [weak self] jobID in
+            self?.schedulePaneRefresh(afterJobID: jobID)
+        }
     }
+
+    func syncDraftFromSelection() { profileCoordinator.syncDraftFromSelection() }
+    func selectProfile(_ id: UUID) { profileCoordinator.selectProfile(id) }
+    func deleteProfile(id: UUID) { profileCoordinator.deleteProfile(id: id) }
+    func saveDraftAsProfile() { _ = profileCoordinator.saveDraftAsProfile() }
 
     func connect() async {
-        isConnecting = true
-        statusMessage = "Connecting…"
-        defer { isConnecting = false }
-
-        do {
-            let session = draft.toSessionConfiguration()
-            let newBackend = try TransferBackendFactory.make(for: .sftp, backend: .citadel)
-            try await connectionService.connect(backend: newBackend, configuration: session)
-            backend = newBackend
-            remotePath = session.initialRemotePath.isEmpty ? "/" : session.initialRemotePath
-            activeSessionName = draft.name.isEmpty ? session.host : draft.name
-            isConnected = true
-            showLogin = false
-            statusMessage = "Connected to \(session.host)"
-            await refreshRemote()
-        } catch {
-            statusMessage = "Connection failed: \(error.localizedDescription)"
-        }
+        await sessionCoordinator.connect(using: profileCoordinator.draft)
     }
 
     func disconnect() async {
-        if let backend {
-            try? await connectionService.disconnect(backend: backend)
-        }
-        backend = nil
-        isConnected = false
-        remoteEntries = []
-        selectedRemoteNames = []
-        showLogin = true
-        statusMessage = "Disconnected"
+        await sessionCoordinator.disconnect()
     }
 
-    func refreshLocal() {
-        localEntries = LocalFileService.list(directory: localPath)
+    func refreshLocal() async {
+        await localPane.refreshLocal()
     }
 
     func refreshRemote() async {
-        guard let backend else { return }
-        do {
-            remoteEntries = try await backend.listDirectory(at: remotePath)
-            statusMessage = "Remote listing updated"
-        } catch {
-            statusMessage = "Remote list failed: \(error.localizedDescription)"
-        }
+        await remotePane.refreshRemote(backend: sessionCoordinator.backend, at: sessionCoordinator.remotePath)
     }
 
-    func navigateLocalUp() {
-        localPath.deleteLastPathComponent()
-        selectedLocalNames = []
-        refreshLocal()
-    }
+    func navigateLocalUp() { localPane.navigateUp() }
 
     func navigateRemoteUp() async {
-        remotePath = (remotePath as NSString).deletingLastPathComponent
-        if remotePath.isEmpty { remotePath = "/" }
-        selectedRemoteNames = []
+        _ = await remotePane.navigateUp(remotePath: &sessionCoordinator.remotePath)
         await refreshRemote()
     }
 
-    func openLocalDirectory(_ name: String) {
-        localPath.appendPathComponent(name, isDirectory: true)
-        selectedLocalNames = []
-        refreshLocal()
-    }
+    func openLocalDirectory(_ name: String) { localPane.openDirectory(name) }
 
     func openRemoteDirectory(_ name: String) async {
-        if remotePath.hasSuffix("/") {
-            remotePath += name
-        } else {
-            remotePath += "/" + name
-        }
-        selectedRemoteNames = []
+        _ = remotePane.openDirectory(name, remotePath: &sessionCoordinator.remotePath)
         await refreshRemote()
     }
 
-    func uploadSelected() {
-        let files = localEntries.filter { selectedLocalNames.contains($0.name) && !$0.isDirectory }
-        guard !files.isEmpty else {
-            statusMessage = "Select local files to upload"
-            return
-        }
-        let items = files.map { file in
-            PendingTransferItem(
-                localURL: localPath.appendingPathComponent(file.name),
-                remotePath: joinRemote(remotePath, file.name),
-                totalBytes: file.size,
-                hasConflict: remoteFileExists(named: file.name)
-            )
-        }
-        queueTransfers(kind: .upload, items: items)
-        selectedLocalNames = []
+    func uploadSelected() async {
+        await transfers.uploadSelected(
+            localPane: localPane,
+            remotePath: sessionCoordinator.remotePath,
+            remoteEntries: remotePane.remoteEntries,
+            isConnected: sessionCoordinator.isConnected
+        )
     }
 
-    func downloadSelected() {
-        let files = remoteEntries.filter { selectedRemoteNames.contains($0.name) && $0.type == .file }
-        guard !files.isEmpty else {
-            statusMessage = "Select remote files to download"
-            return
-        }
-        let items = files.map { file in
-            PendingTransferItem(
-                localURL: localPath.appendingPathComponent(file.name),
-                remotePath: file.path,
-                totalBytes: file.size,
-                hasConflict: FileManager.default.fileExists(atPath: localPath.appendingPathComponent(file.name).path)
-            )
-        }
-        queueTransfers(kind: .download, items: items)
-        selectedRemoteNames = []
+    func downloadSelected() async {
+        await transfers.downloadSelected(
+            localPane: localPane,
+            remotePane: remotePane,
+            backend: sessionCoordinator.backend,
+            isConnected: sessionCoordinator.isConnected
+        )
     }
 
-    func uploadDropped(fileNames: [String]) {
-        let files = localEntries.filter { fileNames.contains($0.name) && !$0.isDirectory }
-        guard !files.isEmpty else { return }
-        let items = files.map { file in
-            PendingTransferItem(
-                localURL: localPath.appendingPathComponent(file.name),
-                remotePath: joinRemote(remotePath, file.name),
-                totalBytes: file.size,
-                hasConflict: remoteFileExists(named: file.name)
-            )
-        }
-        queueTransfers(kind: .upload, items: items)
+    func uploadDropped(fileNames: [String]) async {
+        await transfers.uploadDropped(
+            fileNames: fileNames,
+            localPane: localPane,
+            remotePath: sessionCoordinator.remotePath,
+            remoteEntries: remotePane.remoteEntries,
+            isConnected: sessionCoordinator.isConnected
+        )
     }
 
-    func downloadDropped(fileNames: [String]) {
-        let files = remoteEntries.filter { fileNames.contains($0.name) && $0.type == .file }
-        guard !files.isEmpty else { return }
-        let items = files.map { file in
-            PendingTransferItem(
-                localURL: localPath.appendingPathComponent(file.name),
-                remotePath: file.path,
-                totalBytes: file.size,
-                hasConflict: FileManager.default.fileExists(atPath: localPath.appendingPathComponent(file.name).path)
-            )
-        }
-        queueTransfers(kind: .download, items: items)
+    func downloadDropped(fileNames: [String]) async {
+        await transfers.downloadDropped(
+            fileNames: fileNames,
+            localPane: localPane,
+            remotePane: remotePane,
+            backend: sessionCoordinator.backend,
+            isConnected: sessionCoordinator.isConnected
+        )
     }
 
     func resolveOverwritePrompt(action: OverwriteBatchAction) {
-        guard let batch = overwritePrompt else { return }
-        overwritePrompt = nil
-
-        switch action {
-        case .cancel:
-            statusMessage = "Transfer cancelled"
-            return
-        case .overwriteAll:
-            enqueueBatch(batch, policy: .overwrite)
-        case .skipExisting:
-            enqueueBatch(batch, policy: .skip)
-        case .renameAll:
-            enqueueBatch(batch, policy: .rename)
-        }
-    }
-
-    private func queueTransfers(kind: PendingTransferBatch.Kind, items: [PendingTransferItem]) {
-        guard backend != nil, !items.isEmpty else { return }
-
-        if items.contains(where: \.hasConflict) {
-            overwritePrompt = PendingTransferBatch(kind: kind, items: items)
-            statusMessage = "Confirm overwrite for \(overwritePrompt?.conflictNames.count ?? 0) file(s)"
-            return
-        }
-
-        enqueueBatch(PendingTransferBatch(kind: kind, items: items), policy: .overwrite)
-    }
-
-    private func enqueueBatch(_ batch: PendingTransferBatch, policy: OverwritePolicy) {
-        for item in batch.items {
-            let effectivePolicy: OverwritePolicy = item.hasConflict ? policy : .overwrite
-
-            switch batch.kind {
-            case .upload:
-                transferQueue.enqueueUpload(
-                    localURL: item.localURL,
-                    remotePath: item.remotePath,
-                    totalBytes: item.totalBytes,
-                    overwritePolicy: effectivePolicy
-                )
-            case .download:
-                transferQueue.enqueueDownload(
-                    remotePath: item.remotePath,
-                    localURL: item.localURL,
-                    totalBytes: item.totalBytes,
-                    overwritePolicy: effectivePolicy
-                )
-            }
-        }
-        statusMessage = "Queued \(batch.items.count) transfer(s)"
-    }
-
-    private func remoteFileExists(named name: String) -> Bool {
-        remoteEntries.contains { $0.name == name && $0.type == .file }
+        transfers.resolveOverwritePrompt(action: action)
     }
 
     func transferDidComplete(jobID: UUID) {
-        Task {
-            await refreshRemote()
-            refreshLocal()
-        }
-        if let job = transferQueue.jobs.first(where: { $0.id == jobID }) {
-            statusMessage = "\(job.displayName) transfer complete"
-        }
+        transfers.transferDidComplete(jobID: jobID)
     }
 
-    private func joinRemote(_ base: String, _ name: String) -> String {
-        if base == "/" { return "/\(name)" }
-        if base.hasSuffix("/") { return base + name }
-        return base + "/" + name
+    private func schedulePaneRefresh(afterJobID jobID: UUID) {
+        // Debounce listing refresh so bursts of small files do not hammer listDirectory.
+        paneRefreshTask?.cancel()
+        paneRefreshTask = Task {
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            if transfers.transferQueue.activeCount > 0 { return }
+            await refreshRemote()
+            await refreshLocal()
+        }
+
+        if let job = transfers.transferQueue.jobs.first(where: { $0.id == jobID }) {
+            statusMessage = "\(job.displayName) transfer complete"
+        }
     }
 }
 
 struct SessionProfileDraft: Equatable {
+    // Mutable login form; converted to SessionProfile on save/connect.
     var name: String = ""
     var host: String = ""
     var port: String = "22"
     var username: String = ""
     var password: String = ""
     var keyPath: String = "~/.ssh/id_ed25519"
-    var useKeyAuth: Bool = true
+    var authMethod: AuthMethod = .publicKey
     var initialRemotePath: String = "/"
 
     init() {}
@@ -296,8 +258,13 @@ struct SessionProfileDraft: Equatable {
         username = profile.username
         password = profile.password ?? ""
         keyPath = profile.keyPath ?? "~/.ssh/id_ed25519"
-        useKeyAuth = profile.authMethod == .publicKey
+        authMethod = profile.authMethod
         initialRemotePath = profile.initialRemotePath
+    }
+
+    func validatePort() -> Bool {
+        guard let value = Int(port), (1 ... 65_535).contains(value) else { return false }
+        return true
     }
 
     func toProfile(existingID: UUID?) -> SessionProfile {
@@ -307,9 +274,9 @@ struct SessionProfileDraft: Equatable {
             host: host,
             port: Int(port) ?? 22,
             username: username,
-            password: password.isEmpty ? nil : password,
-            authMethod: useKeyAuth ? .publicKey : .password,
-            keyPath: useKeyAuth ? keyPath : nil,
+            password: authMethod == .password ? (password.isEmpty ? nil : password) : nil,
+            authMethod: authMethod,
+            keyPath: authMethod == .publicKey ? keyPath : nil,
             initialRemotePath: initialRemotePath
         )
     }
@@ -320,7 +287,7 @@ struct SessionProfileDraft: Equatable {
 }
 
 struct LocalEntry: Identifiable, Hashable {
-    let id = UUID()
+    var id: String { name }
     var name: String
     var isDirectory: Bool
     var size: Int64?
@@ -328,6 +295,7 @@ struct LocalEntry: Identifiable, Hashable {
 }
 
 enum LocalFileService {
+    // Runs off the main thread from LocalPaneCoordinator.refreshLocal().
     static func list(directory: URL) -> [LocalEntry] {
         let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey]
         guard let urls = try? FileManager.default.contentsOfDirectory(

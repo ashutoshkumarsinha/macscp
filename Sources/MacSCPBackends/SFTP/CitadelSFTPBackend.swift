@@ -1,3 +1,8 @@
+// CitadelSFTPBackend.swift — Default SFTP backend (NIOSSH via Citadel).
+//
+// Used for password and SSH key file authentication. Shares path/upload helpers
+// with TraversioSFTPBackend under SFTP/. Pipelined read/write when config allows.
+
 import Citadel
 import Crypto
 import Foundation
@@ -14,8 +19,8 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
     private var client: SSHClient?
     private var sftp: SFTPClient?
     private var configuration: SessionConfiguration?
-    private var remoteWorkingDirectory = "/"
-    private let directoryCache = CitadelDirectoryCache()
+    private var pathResolver = SFTPPathResolver()
+    private let directoryCache = SFTPDirectoryCache()
 
     public private(set) var isConnected = false
 
@@ -26,8 +31,17 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
             try await disconnect()
         }
 
-        let authMethod = try makeAuthenticationMethod(from: configuration)
-        let hostKeyValidator = SSHHostKeyValidator.acceptAnything()
+        let authMethod = try await makeAuthenticationMethod(from: configuration)
+        let hostKeyValidator = MacSCPHostKeyTrustStore.makeCitadelValidator(
+            host: configuration.host,
+            port: configuration.port,
+            expectedFingerprint: configuration.advanced.hostKeyFingerprint
+        )
+
+        MacSCPLogger.shared.info(
+            "Connecting to \(configuration.host):\(configuration.port) via Citadel",
+            category: .backend
+        )
 
         let sshClient = try await SSHClient.connect(
             host: configuration.host,
@@ -42,11 +56,12 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         self.client = sshClient
         self.sftp = sftpClient
         self.configuration = configuration
-        self.remoteWorkingDirectory = configuration.initialRemotePath
+        self.pathResolver = SFTPPathResolver(workingDirectory: configuration.initialRemotePath)
         self.isConnected = true
     }
 
     public func disconnect() async throws {
+        MacSCPLogger.shared.info("Disconnecting Citadel SFTP backend", category: .backend)
         if let sftp {
             try await sftp.close()
         }
@@ -61,17 +76,17 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
 
     public func changeDirectory(to path: String) async throws {
         try requireConnected()
-        remoteWorkingDirectory = normalizeRemotePath(path)
+        pathResolver.changeDirectory(to: path)
     }
 
     public func workingDirectory() async throws -> String {
         try requireConnected()
-        return remoteWorkingDirectory
+        return pathResolver.workingDirectory
     }
 
     public func listDirectory(at path: String) async throws -> [RemoteEntry] {
         let sftp = try requireSFTP()
-        let resolved = resolveRemotePath(path)
+        let resolved = pathResolver.resolve(path)
         let rawEntries = try await sftp.listDirectory(atPath: resolved)
         return rawEntries
             .flatMap(\.components)
@@ -79,7 +94,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
             .map { component in
                 RemoteEntry(
                     name: component.filename,
-                    path: joinRemote(resolved, component.filename),
+                    path: SFTPPathResolver.joinRemote(resolved, component.filename),
                     type: mapEntryType(component.attributes),
                     size: component.attributes.size.map { Int64($0) },
                     permissions: component.attributes.permissions.map { FilePermissions(octal: $0) }
@@ -89,7 +104,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
 
     public func stat(path: String) async throws -> RemoteEntry {
         let sftp = try requireSFTP()
-        let resolved = resolveRemotePath(path)
+        let resolved = pathResolver.resolve(path)
         let attrs = try await sftp.getAttributes(at: resolved)
         let name = (resolved as NSString).lastPathComponent
         return RemoteEntry(
@@ -103,7 +118,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
 
     public func createDirectory(at path: String, recursive: Bool) async throws {
         let sftp = try requireSFTP()
-        let resolved = resolveRemotePath(path)
+        let resolved = pathResolver.resolve(path)
         if recursive {
             var parts: [String] = []
             for component in resolved.split(separator: "/") {
@@ -112,7 +127,9 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
                 do {
                     try await sftp.createDirectory(atPath: partial)
                 } catch {
-                    // Directory may already exist when recursive.
+                    if !SFTPErrorHelpers.isAlreadyExists(error) {
+                        throw error
+                    }
                 }
             }
         } else {
@@ -122,7 +139,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
 
     public func removeDirectory(at path: String, recursive: Bool) async throws {
         let sftp = try requireSFTP()
-        let resolved = resolveRemotePath(path)
+        let resolved = pathResolver.resolve(path)
         if recursive {
             let entries = try await listDirectory(at: resolved)
             for entry in entries {
@@ -139,18 +156,18 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
 
     public func removeFile(at path: String) async throws {
         let sftp = try requireSFTP()
-        try await sftp.remove(at: resolveRemotePath(path))
+        try await sftp.remove(at: pathResolver.resolve(path))
     }
 
     public func rename(from: String, to: String) async throws {
         let sftp = try requireSFTP()
-        try await sftp.rename(at: resolveRemotePath(from), to: resolveRemotePath(to))
+        try await sftp.rename(at: pathResolver.resolve(from), to: pathResolver.resolve(to))
     }
 
     public func setPermissions(_ permissions: FilePermissions, at path: String) async throws {
         let sftp = try requireSFTP()
         try await sftp.setAttributes(
-            at: resolveRemotePath(path),
+            at: pathResolver.resolve(path),
             to: {
                 var attrs = SFTPFileAttributes()
                 attrs.permissions = permissions.octal
@@ -168,7 +185,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         try options.throwIfCancelled()
 
         guard let resolved = await TransferDestinationResolver.resolveRemoteUploadPath(
-            path: resolveRemotePath(remotePath),
+            path: pathResolver.resolve(remotePath),
             policy: options.overwrite,
             remoteExists: { path in
                 await TransferDestinationResolver.remotePathExists(sftp: sftp, path: path)
@@ -177,11 +194,11 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
             return TransferResult(bytesTransferred: 0)
         }
 
-        if let parent = CitadelUploadPlanner.parentDirectory(of: resolved) {
+        if let parent = SFTPUploadPlanner.parentDirectory(of: resolved) {
             try await ensureParentDirectoryCached(parent)
         }
 
-        let totalSize = try CitadelUploadPlanner.localFileSize(at: localURL)
+        let totalSize = try SFTPUploadPlanner.localFileSize(at: localURL)
         if totalSize <= options.smallFileThreshold {
             return try await uploadSmallFile(
                 sftp: sftp,
@@ -275,32 +292,36 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         let transferID = UUID()
 
         let bytesWritten: Int64
-        if options.maxConcurrentWrites > 1 {
-            bytesWritten = try await CitadelPipelinedWriter.upload(
-                file: file,
-                readHandle: handle,
-                totalSize: totalSize,
-                startOffset: offset,
-                maxConcurrentWrites: options.maxConcurrentWrites,
-                transferID: transferID,
-                remotePath: resolved,
-                progress: options.progress,
-                cancellation: options.cancellation
-            )
-        } else {
-            bytesWritten = try await uploadLargeFileSequential(
-                file: file,
-                handle: handle,
-                totalSize: totalSize,
-                startOffset: offset,
-                chunkSize: chunkSize,
-                transferID: transferID,
-                resolved: resolved,
-                resumedFrom: resumedFrom,
-                options: options
-            )
+        do {
+            if options.maxConcurrentWrites > 1 {
+                bytesWritten = try await CitadelPipelinedWriter.upload(
+                    file: file,
+                    readHandle: handle,
+                    totalSize: totalSize,
+                    startOffset: offset,
+                    maxConcurrentWrites: options.maxConcurrentWrites,
+                    transferID: transferID,
+                    remotePath: resolved,
+                    progress: options.progress,
+                    cancellation: options.cancellation
+                )
+            } else {
+                bytesWritten = try await uploadLargeFileSequential(
+                    file: file,
+                    handle: handle,
+                    totalSize: totalSize,
+                    startOffset: offset,
+                    chunkSize: chunkSize,
+                    transferID: transferID,
+                    resolved: resolved,
+                    resumedFrom: resumedFrom,
+                    options: options
+                )
+            }
+        } catch {
+            try? await file.close()
+            throw error
         }
-
         try await file.close()
 
         var checksum: String?
@@ -364,46 +385,24 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         try requireConnected()
 
         let parents = Set(
-            items.compactMap { CitadelUploadPlanner.parentDirectory(of: resolveRemotePath($0.remotePath)) }
+            items.compactMap { SFTPUploadPlanner.parentDirectory(of: pathResolver.resolve($0.remotePath)) }
         )
         for parent in parents {
             try await ensureParentDirectoryCached(parent)
         }
 
         let concurrency = max(1, options.maxConcurrentUploads)
-        var results = [TransferResult?](repeating: nil, count: items.count)
-
-        try await withThrowingTaskGroup(of: (Int, TransferResult).self) { group in
-            var nextIndex = 0
-
-            func scheduleNext() {
-                guard nextIndex < items.count else { return }
-                let index = nextIndex
-                nextIndex += 1
-                let item = items[index]
-                var itemOptions = options
-                itemOptions.checksum = nil
-                group.addTask {
-                    let result = try await self.upload(
-                        localURL: item.localURL,
-                        remotePath: item.remotePath,
-                        options: itemOptions
-                    )
-                    return (index, result)
-                }
-            }
-
-            for _ in 0 ..< min(concurrency, items.count) {
-                scheduleNext()
-            }
-
-            for try await (index, result) in group {
-                results[index] = result
-                scheduleNext()
-            }
+        return try await SFTPBatchUploadExecutor.uploadBatch(
+            items: items,
+            options: options,
+            concurrency: concurrency
+        ) { item, itemOptions in
+            try await self.upload(
+                localURL: item.localURL,
+                remotePath: item.remotePath,
+                options: itemOptions
+            )
         }
-
-        return results.map { $0! }
     }
 
     public func download(
@@ -413,7 +412,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
     ) async throws -> TransferResult {
         let sftp = try requireSFTP()
         try options.throwIfCancelled()
-        let resolved = resolveRemotePath(remotePath)
+        let resolved = pathResolver.resolve(remotePath)
 
         guard let destination = try TransferDestinationResolver.resolveLocalDownloadURL(
             localURL,
@@ -458,31 +457,53 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         let transferID = UUID()
         let start = Date()
 
-        while offset < remoteSize {
-            try options.throwIfCancelled()
-            let length = min(chunkSize, UInt32(remoteSize - offset))
-            let buffer = try await file.read(from: offset, length: length)
-            let data = Data(buffer: buffer)
-            try handle.write(contentsOf: data)
-            offset += UInt64(data.count)
-            transferred = Int64(offset)
-
-            if let progress = options.progress {
-                let elapsed = Date().timeIntervalSince(start)
-                let speed = elapsed > 0 ? Double(transferred - (resumedFrom ?? 0)) / elapsed : nil
-                progress(
-                    TransferProgress(
-                        transferID: transferID,
-                        direction: .download,
-                        path: resolved,
-                        totalBytes: Int64(remoteSize),
-                        transferredBytes: transferred,
-                        bytesPerSecond: speed
-                    )
+        do {
+            let bytesRead: Int64
+            if options.maxConcurrentReads > 1 {
+                // Overlap SFTP READ round-trips; falls back to sequential loop when == 1.
+                bytesRead = try await CitadelPipelinedReader.download(
+                    file: file,
+                    writeHandle: handle,
+                    totalSize: remoteSize,
+                    startOffset: offset,
+                    chunkSize: chunkSize,
+                    maxConcurrentReads: options.maxConcurrentReads,
+                    transferID: transferID,
+                    remotePath: resolved,
+                    progress: options.progress,
+                    cancellation: options.cancellation
                 )
-            }
-        }
+                transferred = Int64(offset) + bytesRead
+            } else {
+                while offset < remoteSize {
+                    try options.throwIfCancelled()
+                    let length = min(chunkSize, UInt32(remoteSize - offset))
+                    let buffer = try await file.read(from: offset, length: length)
+                    let data = Data(buffer: buffer)
+                    try handle.write(contentsOf: data)
+                    offset += UInt64(data.count)
+                    transferred = Int64(offset)
 
+                    if let progress = options.progress {
+                        let elapsed = Date().timeIntervalSince(start)
+                        let speed = elapsed > 0 ? Double(transferred - (resumedFrom ?? 0)) / elapsed : nil
+                        progress(
+                            TransferProgress(
+                                transferID: transferID,
+                                direction: .download,
+                                path: resolved,
+                                totalBytes: Int64(remoteSize),
+                                transferredBytes: transferred,
+                                bytesPerSecond: speed
+                            )
+                        )
+                    }
+                }
+            }
+        } catch {
+            try? await file.close()
+            throw error
+        }
         try await file.close()
 
         var checksum: String?
@@ -499,7 +520,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
 
     // MARK: - Private
 
-    private func makeAuthenticationMethod(from configuration: SessionConfiguration) throws -> SSHAuthenticationMethod {
+    private func makeAuthenticationMethod(from configuration: SessionConfiguration) async throws -> SSHAuthenticationMethod {
         switch configuration.authMethod {
         case .password, .interactive:
             guard let password = configuration.password else {
@@ -525,7 +546,8 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
                 throw BackendError.authenticationFailed("Unsupported key type: \(keyType)")
             }
         case .agent:
-            throw BackendError.notImplemented("SSH agent auth")
+            // App routes agent sessions to Traversio; this path is a safety net.
+            throw BackendError.authenticationFailed("SSH agent auth requires the Traversio SFTP backend")
         }
     }
 
@@ -546,57 +568,35 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         return sftp
     }
 
-    private func resolveRemotePath(_ path: String) -> String {
-        if path.hasPrefix("/") {
-            return normalizeRemotePath(path)
-        }
-        return normalizeRemotePath(joinRemote(remoteWorkingDirectory, path))
-    }
-
-    private func normalizeRemotePath(_ path: String) -> String {
-        var components: [String] = []
-        for part in path.split(separator: "/", omittingEmptySubsequences: true) {
-            if part == ".." {
-                if !components.isEmpty { components.removeLast() }
-            } else if part != "." {
-                components.append(String(part))
-            }
-        }
-        return "/" + components.joined(separator: "/")
-    }
-
-    private func joinRemote(_ base: String, _ name: String) -> String {
-        if base.hasSuffix("/") {
-            return base + name
-        }
-        return base + "/" + name
-    }
-
     private func mapEntryType(_ attributes: SFTPFileAttributes) -> EntryType {
-        if attributes.permissions.map({ $0 & 0o170000 == 0o040000 }) == true {
-            return .directory
-        }
-        return .file
+        SFTPAttributeMapping.entryType(fromPermissions: attributes.permissions)
     }
 }
 
 public enum TransferBackendFactory {
+    /// Default factory entry point; uses Citadel unless caller specifies backend kind.
     public static func make(for transferProtocol: TransferProtocol) throws -> TransferBackend {
         try make(for: transferProtocol, backend: .citadel)
     }
 
     public static func make(
         for transferProtocol: TransferProtocol,
-        backend: SFTPBackendKind
+        backend: SFTPBackendKind,
+        serialized: Bool = false
     ) throws -> TransferBackend {
         switch transferProtocol {
         case .sftp, .scp:
+            let raw: CapableTransferBackend
             switch backend {
             case .citadel:
-                return CitadelSFTPBackend()
+                raw = CitadelSFTPBackend()
             case .traversio:
-                return TraversioSFTPBackend()
+                raw = TraversioSFTPBackend()
             }
+            if serialized {
+                return SerializingTransferBackend(wrapping: raw)
+            }
+            return raw
         case .ftp, .ftps:
             throw BackendError.notImplemented("FTP")
         case .webdav:

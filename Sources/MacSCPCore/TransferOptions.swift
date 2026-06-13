@@ -62,6 +62,8 @@ public struct TransferOptions: Sendable {
     public var smallFileThreshold: Int
     /// In-flight SFTP WRITE requests per open file handle (Citadel pipelined upload).
     public var maxConcurrentWrites: Int
+    /// In-flight SFTP READ requests per open file handle (Traversio pipelined download).
+    public var maxConcurrentReads: Int
     /// When set, backends poll this during transfers for mid-flight cancel.
     public var cancellation: TransferCancellation?
 
@@ -69,12 +71,13 @@ public struct TransferOptions: Sendable {
         resume: Bool = false,
         overwrite: OverwritePolicy = .overwrite,
         transferMode: TransferMode = .binary,
-        checksum: ChecksumAlgorithm? = .sha256,
+        checksum: ChecksumAlgorithm? = nil,
         progress: ProgressHandler? = nil,
         chunkSize: Int = 1024 * 1024,
         maxConcurrentUploads: Int = 8,
         smallFileThreshold: Int = 512 * 1024,
         maxConcurrentWrites: Int = 8,
+        maxConcurrentReads: Int = 8,
         cancellation: TransferCancellation? = nil
     ) {
         self.resume = resume
@@ -86,6 +89,7 @@ public struct TransferOptions: Sendable {
         self.maxConcurrentUploads = maxConcurrentUploads
         self.smallFileThreshold = smallFileThreshold
         self.maxConcurrentWrites = maxConcurrentWrites
+        self.maxConcurrentReads = maxConcurrentReads
         self.cancellation = cancellation
     }
 

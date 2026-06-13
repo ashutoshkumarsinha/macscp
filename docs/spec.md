@@ -20,6 +20,8 @@ An open-source, WinSCP-inspired file transfer client rebuilt from the ground up 
 | Document | Path |
 |---|---|
 | Documentation index | [README.md](README.md) |
+| High-level design | [hld.md](hld.md) |
+| User guide | [user-guide.md](user-guide.md) |
 | SFTP backend spike | [spikes/sftp-backend-spike.md](spikes/sftp-backend-spike.md) |
 | CLI reference | [cli-reference.md](cli-reference.md) |
 | Scripting guide | [scripting.md](scripting.md) |

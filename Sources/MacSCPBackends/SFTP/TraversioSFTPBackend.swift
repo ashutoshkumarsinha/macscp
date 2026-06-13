@@ -1,3 +1,7 @@
+// TraversioSFTPBackend.swift — Alternate SFTP backend (libssh2 via Traversio).
+//
+// Selected for SSH agent auth. Also used in macscp-benchmark comparisons.
+
 import Foundation
 import MacSCPCore
 import Traversio
@@ -6,14 +10,14 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
     public let backendIdentifier = "sftp-traversio"
 
     public var capabilities: BackendCapabilities {
-        [.resumeDownload, .resumeUpload, .chmod, .atomicRename]
+        [.chmod, .atomicRename]
     }
 
     private var connection: SSHConnection?
     private var sftp: SFTPClient?
     private var configuration: SessionConfiguration?
-    private var remoteWorkingDirectory = "/"
-    private let directoryCache = CitadelDirectoryCache()
+    private var pathResolver = SFTPPathResolver()
+    private let directoryCache = SFTPDirectoryCache()
 
     public private(set) var isConnected = false
 
@@ -24,14 +28,14 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
             try await disconnect()
         }
 
-        let sshConfig = try makeConfiguration(from: configuration)
+        let sshConfig = try await makeConfiguration(from: configuration)
         let connection = try await SSHClient.connect(configuration: sshConfig)
         let sftp = try await connection.openSFTP()
 
         self.connection = connection
         self.sftp = sftp
         self.configuration = configuration
-        self.remoteWorkingDirectory = configuration.initialRemotePath
+        self.pathResolver = SFTPPathResolver(workingDirectory: configuration.initialRemotePath)
         self.isConnected = true
     }
 
@@ -47,24 +51,24 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
 
     public func changeDirectory(to path: String) async throws {
         try requireConnected()
-        remoteWorkingDirectory = normalizeRemotePath(path)
+        pathResolver.changeDirectory(to: path)
     }
 
     public func workingDirectory() async throws -> String {
         try requireConnected()
-        return remoteWorkingDirectory
+        return pathResolver.workingDirectory
     }
 
     public func listDirectory(at path: String) async throws -> [RemoteEntry] {
         let sftp = try requireSFTP()
-        let resolved = resolveRemotePath(path)
+        let resolved = pathResolver.resolve(path)
         let names = try await sftp.listDirectory(resolved)
         return names
             .filter { $0.filename != "." && $0.filename != ".." }
             .map { name in
             RemoteEntry(
                 name: name.filename,
-                path: joinRemote(resolved, name.filename),
+                path: SFTPPathResolver.joinRemote(resolved, name.filename),
                 type: mapEntryType(name.attributes),
                 size: name.attributes.size.map { Int64($0) },
                 permissions: name.attributes.permissions.map { FilePermissions(octal: $0) }
@@ -74,7 +78,7 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
 
     public func stat(path: String) async throws -> RemoteEntry {
         let sftp = try requireSFTP()
-        let resolved = resolveRemotePath(path)
+        let resolved = pathResolver.resolve(path)
         let attrs = try await sftp.stat(resolved)
         let name = (resolved as NSString).lastPathComponent
         return RemoteEntry(
@@ -88,7 +92,7 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
 
     public func createDirectory(at path: String, recursive: Bool) async throws {
         let sftp = try requireSFTP()
-        let resolved = resolveRemotePath(path)
+        let resolved = pathResolver.resolve(path)
         if recursive {
             var parts: [String] = []
             for component in resolved.split(separator: "/") {
@@ -97,7 +101,9 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
                 do {
                     try await sftp.makeDirectory(partial)
                 } catch {
-                    // May already exist.
+                    if !SFTPErrorHelpers.isAlreadyExists(error) {
+                        throw error
+                    }
                 }
             }
         } else {
@@ -107,7 +113,7 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
 
     public func removeDirectory(at path: String, recursive: Bool) async throws {
         let sftp = try requireSFTP()
-        let resolved = resolveRemotePath(path)
+        let resolved = pathResolver.resolve(path)
         if recursive {
             for entry in try await listDirectory(at: resolved) {
                 switch entry.type {
@@ -123,12 +129,12 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
 
     public func removeFile(at path: String) async throws {
         let sftp = try requireSFTP()
-        try await sftp.removeFile(resolveRemotePath(path))
+        try await sftp.removeFile(pathResolver.resolve(path))
     }
 
     public func rename(from: String, to: String) async throws {
         let sftp = try requireSFTP()
-        try await sftp.rename(resolveRemotePath(from), to: resolveRemotePath(to))
+        try await sftp.rename(pathResolver.resolve(from), to: pathResolver.resolve(to))
     }
 
     public func setPermissions(_ permissions: FilePermissions, at path: String) async throws {
@@ -143,7 +149,7 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
             modificationTime: nil,
             extensions: []
         )
-        try await sftp.setAttributes(resolveRemotePath(path), attributes: attrs)
+        try await sftp.setAttributes(pathResolver.resolve(path), attributes: attrs)
     }
 
     public func uploadBatch(
@@ -152,46 +158,24 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
     ) async throws -> [TransferResult] {
         try requireConnected()
         let parents = Set(
-            items.compactMap { CitadelUploadPlanner.parentDirectory(of: resolveRemotePath($0.remotePath)) }
+            items.compactMap { SFTPUploadPlanner.parentDirectory(of: pathResolver.resolve($0.remotePath)) }
         )
         for parent in parents {
             try await ensureParentDirectoryCached(parent)
         }
 
         let concurrency = max(1, options.maxConcurrentUploads)
-        var results = [TransferResult?](repeating: nil, count: items.count)
-
-        try await withThrowingTaskGroup(of: (Int, TransferResult).self) { group in
-            var nextIndex = 0
-
-            func scheduleNext() {
-                guard nextIndex < items.count else { return }
-                let index = nextIndex
-                nextIndex += 1
-                let item = items[index]
-                var itemOptions = options
-                itemOptions.checksum = nil
-                group.addTask {
-                    let result = try await self.upload(
-                        localURL: item.localURL,
-                        remotePath: item.remotePath,
-                        options: itemOptions
-                    )
-                    return (index, result)
-                }
-            }
-
-            for _ in 0 ..< min(concurrency, items.count) {
-                scheduleNext()
-            }
-
-            for try await (index, result) in group {
-                results[index] = result
-                scheduleNext()
-            }
+        return try await SFTPBatchUploadExecutor.uploadBatch(
+            items: items,
+            options: options,
+            concurrency: concurrency
+        ) { item, itemOptions in
+            try await self.upload(
+                localURL: item.localURL,
+                remotePath: item.remotePath,
+                options: itemOptions
+            )
         }
-
-        return results.map { $0! }
     }
 
     public func upload(
@@ -203,7 +187,7 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
         try options.throwIfCancelled()
 
         guard let resolved = await TransferDestinationResolver.resolveRemoteUploadPath(
-            path: resolveRemotePath(remotePath),
+            path: pathResolver.resolve(remotePath),
             policy: options.overwrite,
             remoteExists: { path in
                 (try? await sftp.stat(path)) != nil
@@ -212,11 +196,11 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
             return TransferResult(bytesTransferred: 0)
         }
 
-        if let parent = CitadelUploadPlanner.parentDirectory(of: resolved) {
+        if let parent = SFTPUploadPlanner.parentDirectory(of: resolved) {
             try await ensureParentDirectoryCached(parent)
         }
 
-        let totalSize = try CitadelUploadPlanner.localFileSize(at: localURL)
+        let totalSize = try SFTPUploadPlanner.localFileSize(at: localURL)
         let start = Date()
         let shouldContinue = TransferContinuationFactory.shouldContinue(for: options.cancellation)
         let bytes = try await sftp.uploadFile(
@@ -257,7 +241,7 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
     ) async throws -> TransferResult {
         let sftp = try requireSFTP()
         try options.throwIfCancelled()
-        let resolved = resolveRemotePath(remotePath)
+        let resolved = pathResolver.resolve(remotePath)
 
         guard let destination = try TransferDestinationResolver.resolveLocalDownloadURL(
             localURL,
@@ -272,7 +256,7 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
             resolved,
             to: destination,
             chunkSize: UInt32(max(options.chunkSize, 32 * 1024)),
-            maxConcurrentReads: max(options.maxConcurrentUploads, 1),
+            maxConcurrentReads: max(options.maxConcurrentReads, 1),
             shouldContinue: shouldContinue
         )
 
@@ -300,7 +284,7 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
 
     // MARK: - Private
 
-    private func makeConfiguration(from configuration: SessionConfiguration) throws -> SSHClientConfiguration {
+    private func makeConfiguration(from configuration: SessionConfiguration) async throws -> SSHClientConfiguration {
         let auth: SSHAuthenticationMethod
         switch configuration.authMethod {
         case .password, .interactive:
@@ -318,7 +302,7 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
                 passphrase: configuration.keyPassphrase
             )
         case .agent:
-            throw BackendError.notImplemented("SSH agent auth")
+            auth = try await SSHAgentAuthSupport.traversioAuthentication()
         }
 
         return SSHClientConfiguration(
@@ -326,8 +310,38 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
             port: UInt16(clamping: configuration.port),
             username: configuration.username,
             authentication: auth,
-            hostKeyPolicy: .acceptAnyVerifiedHostKey
+            hostKeyPolicy: makeHostKeyPolicy(for: configuration)
         )
+    }
+
+    private func makeHostKeyPolicy(for configuration: SessionConfiguration) -> SSHHostKeyPolicy {
+        let endpoint = MacSCPHostKeyTrustStore.endpointKey(
+            host: configuration.host,
+            port: configuration.port
+        )
+        let expected = configuration.advanced.hostKeyFingerprint.map(MacSCPHostKeyTrustStore.normalizeFingerprint)
+
+        if let expected, !expected.isEmpty {
+            return .callback { request in
+                let received = MacSCPHostKeyTrustStore.normalizeFingerprint(
+                    request.trustedHostKey.fingerprintSHA256
+                )
+                if received == expected {
+                    return .callback
+                }
+                throw BackendError.hostKeyRejected(expected: expected, actual: received)
+            }
+        }
+
+        return .callback { request in
+            let received = request.trustedHostKey.fingerprintSHA256
+            try MacSCPHostKeyTrustStore.validateTOFU(
+                endpoint: endpoint,
+                receivedFingerprint: received,
+                expectedFingerprint: nil
+            )
+            return .callback
+        }
     }
 
     private func ensureParentDirectoryCached(_ parent: String) async throws {
@@ -347,36 +361,7 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
         return sftp
     }
 
-    private func resolveRemotePath(_ path: String) -> String {
-        if path.hasPrefix("/") {
-            return normalizeRemotePath(path)
-        }
-        return normalizeRemotePath(joinRemote(remoteWorkingDirectory, path))
-    }
-
-    private func normalizeRemotePath(_ path: String) -> String {
-        var components: [String] = []
-        for part in path.split(separator: "/", omittingEmptySubsequences: true) {
-            if part == ".." {
-                if !components.isEmpty { components.removeLast() }
-            } else if part != "." {
-                components.append(String(part))
-            }
-        }
-        return "/" + components.joined(separator: "/")
-    }
-
-    private func joinRemote(_ base: String, _ name: String) -> String {
-        if base.hasSuffix("/") {
-            return base + name
-        }
-        return base + "/" + name
-    }
-
     private func mapEntryType(_ attributes: SSHSFTPFileAttributes) -> EntryType {
-        if attributes.permissions.map({ $0 & 0o170000 == 0o040000 }) == true {
-            return .directory
-        }
-        return .file
+        SFTPAttributeMapping.entryType(fromPermissions: attributes.permissions)
     }
 }

@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.1 (draft) |
-| Related | [spec.md §7](spec.md), [SFTP spike](spikes/sftp-backend-spike.md) |
+| Version | 0.2 |
+| Related | [spec.md §7](spec.md), [HLD §7](hld.md), [SFTP spike](spikes/sftp-backend-spike.md) |
 
 All MacSCP protocol implementations (SFTP, FTP, S3, …) conform to a shared Swift protocol in `MacSCPCore`. The GUI, CLI, and sync engine depend only on this interface — never on Citadel, libssh2, or other backend specifics.
 
@@ -12,7 +12,7 @@ All MacSCP protocol implementations (SFTP, FTP, S3, …) conform to a shared Swi
 ## Design Goals
 
 1. **Backend swap** — change SFTP library without touching UI/CLI.
-2. **Async-first** — all I/O is `async throws`; cancellation via `Task`.
+2. **Async-first** — all I/O is `async throws`; cancellation via `TransferCancellation`.
 3. **Progress** — uniform progress callbacks for transfer queue.
 4. **Sendable** — backends safe to use across concurrency domains where possible.
 
@@ -20,62 +20,28 @@ All MacSCP protocol implementations (SFTP, FTP, S3, …) conform to a shared Swi
 
 ## Core Types
 
+See `Sources/MacSCPCore/` for authoritative definitions. Highlights:
+
 ```swift
-public enum TransferProtocol: String, Codable, Sendable {
-    case sftp, scp, ftp, ftps, webdav, s3, gcs
-}
-
-public struct SessionConfiguration: Codable, Sendable {
-    public var id: UUID
-    public var name: String
-    public var protocol: TransferProtocol
-    public var host: String
-    public var port: Int
-    public var username: String
-    public var authMethod: AuthMethod
-    public var keyPath: String?
-    public var initialRemotePath: String
-    public var advanced: AdvancedSettings
-}
-
 public enum AuthMethod: String, Codable, Sendable {
-    case password
-    case publicKey
-    case agent
-    case interactive
-}
-
-public struct RemoteEntry: Sendable {
-    public var name: String
-    public var path: String
-    public var type: EntryType
-    public var size: Int64?
-    public var modified: Date?
-    public var permissions: FilePermissions?
-}
-
-public enum EntryType: Sendable {
-    case file, directory, symlink
+    case password, publicKey, agent, interactive
 }
 
 public struct TransferOptions: Sendable {
-    public var resume: Bool = false
-    public var overwrite: OverwritePolicy = .prompt
-    public var transferMode: TransferMode = .binary
-    public var checksum: ChecksumAlgorithm?
+    public var resume: Bool
+    public var overwrite: OverwritePolicy
+    public var chunkSize: Int
+    public var maxConcurrentWrites: Int
+    public var maxConcurrentReads: Int
+    public var maxConcurrentUploads: Int
+    public var smallFileThreshold: Int
+    public var cancellation: TransferCancellation?
     public var progress: ProgressHandler?
-}
-
-public enum OverwritePolicy: Sendable {
-    case prompt, overwrite, skip, rename
-}
-
-public struct TransferResult: Sendable {
-    public var bytesTransferred: Int64
-    public var checksum: String?
-    public var resumedFrom: Int64?
+    public var checksum: ChecksumAlgorithm?
 }
 ```
+
+Transfer queue reads defaults from `~/.macscp/config.toml` `[transfer]` via `MacSCPConfiguration`.
 
 ---
 
@@ -83,29 +49,17 @@ public struct TransferResult: Sendable {
 
 ```swift
 public protocol TransferBackend: AnyObject, Sendable {
-    /// Human-readable backend id, e.g. "sftp-citadel"
     var backendIdentifier: String { get }
-
-    /// Connected state
     var isConnected: Bool { get }
 
-    /// Open connection; idempotent if already connected to same config
     func connect(configuration: SessionConfiguration) async throws
-
-    /// Graceful disconnect
     func disconnect() async throws
-
-    // MARK: - Navigation
 
     func changeDirectory(to path: String) async throws
     func workingDirectory() async throws -> String
 
-    // MARK: - Listing
-
     func listDirectory(at path: String) async throws -> [RemoteEntry]
     func stat(path: String) async throws -> RemoteEntry
-
-    // MARK: - Mutations
 
     func createDirectory(at path: String, recursive: Bool) async throws
     func removeDirectory(at path: String, recursive: Bool) async throws
@@ -113,45 +67,31 @@ public protocol TransferBackend: AnyObject, Sendable {
     func rename(from: String, to: String) async throws
     func setPermissions(_ permissions: FilePermissions, at path: String) async throws
 
-    // MARK: - Transfers
-
-    func upload(
-        localURL: URL,
-        remotePath: String,
-        options: TransferOptions
-    ) async throws -> TransferResult
-
-    func download(
-        remotePath: String,
-        localURL: URL,
-        options: TransferOptions
-    ) async throws -> TransferResult
+    func upload(localURL: URL, remotePath: String, options: TransferOptions) async throws -> TransferResult
+    func download(remotePath: String, localURL: URL, options: TransferOptions) async throws -> TransferResult
 }
 ```
+
+`CapableTransferBackend` adds `capabilities` and optional `uploadBatch(items:options:)`.
 
 ---
 
 ## Optional Capabilities
-
-Backends declare features via `BackendCapabilities`:
 
 ```swift
 public struct BackendCapabilities: OptionSet, Sendable {
     public static let resumeUpload    = Self(rawValue: 1 << 0)
     public static let resumeDownload  = Self(rawValue: 1 << 1)
     public static let chmod           = Self(rawValue: 1 << 2)
-    public static let chown           = Self(rawValue: 1 << 3)
-    public static let symlink         = Self(rawValue: 1 << 4)
-    public static let serverSideCopy  = Self(rawValue: 1 << 5)
     public static let atomicRename    = Self(rawValue: 1 << 6)
-}
-
-public protocol CapableTransferBackend: TransferBackend {
-    var capabilities: BackendCapabilities { get }
+    // ...
 }
 ```
 
-CLI `call chown` and sync `-criteria=checksum` check capabilities before executing.
+| Backend | Capabilities |
+|---|---|
+| Citadel | resume upload/download, chmod, atomic rename |
+| Traversio | chmod, atomic rename |
 
 ---
 
@@ -159,20 +99,27 @@ CLI `call chown` and sync `-criteria=checksum` check capabilities before executi
 
 ```swift
 public enum TransferBackendFactory {
-    public static func make(for protocol: TransferProtocol) throws -> TransferBackend {
-        switch `protocol` {
-        case .sftp, .scp:
-            return SFTPBackend()   // Citadel-backed by default; swappable
-        case .ftp, .ftps:
-            throw BackendError.notImplemented("FTP")
-        case .webdav:
-            throw BackendError.notImplemented("WebDAV")
-        case .s3, .gcs:
-            throw BackendError.notImplemented("S3")
-        }
-    }
+    public static func make(
+        for transferProtocol: TransferProtocol,
+        backend: SFTPBackendKind = .citadel,
+        serialized: Bool = false
+    ) throws -> TransferBackend
+}
+
+public enum SFTPBackendKind: String, Sendable, CaseIterable {
+    case citadel
+    case traversio
 }
 ```
+
+**App selection logic** (`SessionCoordinator`):
+
+| Auth method | Backend |
+|---|---|
+| `.publicKey`, `.password` | Citadel (default) |
+| `.agent` | Traversio (`SSHAgentAuthSupport.traversioAuthentication()`) |
+
+Pass `serialized: true` to wrap the backend in `SerializingTransferBackend` (actor) for safe concurrent queue access.
 
 ---
 
@@ -191,8 +138,6 @@ public struct TransferProgress: Sendable {
 public typealias ProgressHandler = @Sendable (TransferProgress) -> Void
 ```
 
-Transfer queue aggregates progress from multiple concurrent `upload`/`download` calls.
-
 ---
 
 ## Error Model
@@ -205,57 +150,54 @@ public enum BackendError: Error, Sendable {
     case hostKeyRejected(expected: String?, actual: String)
     case pathNotFound(String)
     case permissionDenied(String)
-    case transferFailed(String, underlying: Error?)
+    case transferFailed(String)
     case cancelled
 }
 ```
 
-Map to CLI exit codes: auth → 4, host key → 5, transfer → 3, connection → 2.
-
 ---
 
-## SFTP Backend Implementation Notes
-
-See [sftp-backend-spike.md](spikes/sftp-backend-spike.md).
-
-Initial layout:
+## SFTP Backend Layout (As-Built)
 
 ```text
-MacSCPBackends/
-  SFTP/
-    SFTPBackend.swift          # TransferBackend conformance
-    CitadelSession.swift       # Citadel connect/auth/disconnect
-    CitadelTransfer.swift      # upload/download with progress
-    SFTPBackendLegacy.swift    # Optional Traversio implementation (feature flag)
+MacSCPBackends/SFTP/
+  CitadelSFTPBackend.swift      # Default key/password backend
+  TraversioSFTPBackend.swift    # Agent auth + benchmarks
+  SFTPPathResolver.swift        # Shared path normalize/resolve
+  SFTPDirectoryCache.swift      # Session mkdir cache
+  SFTPUploadPlanner.swift       # Parent dir, file size
+  SFTPBatchUploadExecutor.swift # Concurrent batch uploads
+  CitadelPipelinedWriter.swift  # Pipelined SFTP WRITE (Citadel)
+  CitadelPipelinedReader.swift  # Pipelined SFTP READ (Citadel)
+  TransferDestinationResolver.swift
+  MacSCPHostKeySupport.swift    # TOFU known_hosts.json
+  SSHAgentAuthSupport.swift     # Traversio ssh-agent wrapper
+  SerializingTransferBackend.swift
+  SFTPErrorHelpers.swift
 ```
 
-Feature flag in build settings or runtime config:
+### Performance notes
 
-```swift
-#if MACSCP_SFTP_LEGACY
-import Traversio
-#endif
-```
+- **Small files** (< `smallFileThreshold`): single SFTP write/read.
+- **Large files**: chunked I/O; Citadel uses pipelined windows when `maxConcurrentWrites` / `maxConcurrentReads` > 1.
+- **Batch uploads**: `uploadBatch` with `maxConcurrentUploads` from config.
+- **Directory uploads**: app expands trees via `DirectoryTransferPlanner`; backends ensure parent dirs via `SFTPDirectoryCache`.
 
 ---
 
 ## Testing
 
-`MockTransferBackend` in `MacSCPTests` implements the protocol with in-memory filesystem for UI and CLI unit tests.
+Mock backends in `MacSCPTests` implement the protocol for queue and cancellation tests.
 
-Integration tests (`MacSCPIntegrationTests`) run against Docker:
+Integration tests use the local OpenSSH fixture:
 
-```yaml
-# docker-compose.test.yml (future)
-services:
-  sftp:
-    image: atmoz/sftp
-    volumes:
-      - ./fixtures:/home/test/upload
+```bash
+make server-start
+make test
 ```
 
-Each backend must pass `TransferBackendConformanceTests` — list, round-trip upload/download, resume, chmod, rename.
+Conformance coverage: list, upload/download, skip/rename/overwrite, cancellation, disconnect handling, directory planner.
 
 ---
 
-*End of TransferBackend protocol v0.1*
+*End of TransferBackend protocol v0.2*

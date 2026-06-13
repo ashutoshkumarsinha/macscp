@@ -1,4 +1,5 @@
 import SwiftUI
+import MacSCPUI
 
 struct OverwritePromptView: View {
     let batch: PendingTransferBatch
@@ -36,13 +37,13 @@ struct OverwritePromptView: View {
                 Button("Skip Existing") {
                     onResolve(.skipExisting)
                 }
+                .keyboardShortcut(.defaultAction)
                 Button("Rename All") {
                     onResolve(.renameAll)
                 }
                 Button("Overwrite All") {
                     onResolve(.overwriteAll)
                 }
-                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)

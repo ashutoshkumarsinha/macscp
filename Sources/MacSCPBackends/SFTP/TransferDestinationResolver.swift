@@ -50,12 +50,3 @@ enum TransferDestinationResolver {
         }
     }
 }
-
-enum TransferContinuationFactory {
-    static func shouldContinue(for cancellation: TransferCancellation?) -> (@Sendable () async -> Bool)? {
-        guard let cancellation else { return nil }
-        return {
-            !cancellation.isCancelled && !Task.isCancelled
-        }
-    }
-}

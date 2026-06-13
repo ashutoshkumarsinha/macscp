@@ -1,4 +1,5 @@
 import SwiftUI
+import MacSCPUI
 
 struct TransferQueueView: View {
     @Environment(AppModel.self) private var appModel

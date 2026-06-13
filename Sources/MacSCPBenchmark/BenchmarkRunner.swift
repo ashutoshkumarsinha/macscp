@@ -33,7 +33,6 @@ struct BenchmarkRunner {
 
         let backend = CitadelSFTPBackend()
         try await backend.connect(configuration: config.sessionConfiguration())
-        defer { Task { try? await backend.disconnect() } }
 
         let start = Date()
         switch direction {
@@ -41,6 +40,7 @@ struct BenchmarkRunner {
             _ = try await backend.upload(localURL: local, remotePath: remote, options: TransferOptions(checksum: .sha256))
             let opensshTime = try OpenSSHSFTPBaseline.upload(local: local, remotePath: remote, config: config)
             let citadelTime = Date().timeIntervalSince(start)
+            try await backend.disconnect()
             return compareThroughput(
                 scenario: "large_upload_\(label)",
                 citadelSeconds: citadelTime,
@@ -61,6 +61,7 @@ struct BenchmarkRunner {
             )
             result.sha256Match = match
             result.passed = result.passed && match
+            try await backend.disconnect()
             return result
         }
     }
@@ -73,7 +74,6 @@ struct BenchmarkRunner {
 
         let backend = CitadelSFTPBackend()
         try await backend.connect(configuration: config.sessionConfiguration())
-        defer { Task { try? await backend.disconnect() } }
         try await backend.createDirectory(at: remoteDir, recursive: true)
 
         let start = Date()
@@ -101,6 +101,7 @@ struct BenchmarkRunner {
             _ = try OpenSSHSFTPBaseline.uploadBatch(files: batchFiles, config: config)
             let opensshTime = Date().timeIntervalSince(opensshStart)
             let ratio = opensshTime / max(citadelTime, 0.001)
+            try await backend.disconnect()
             return BenchmarkResult(
                 scenario: "small_upload_\(count)_files",
                 backend: "citadel vs openssh",
@@ -120,6 +121,7 @@ struct BenchmarkRunner {
                 _ = try await backend.download(remotePath: entry.path, localURL: local, options: TransferOptions(checksum: nil))
             }
             let citadelTime = Date().timeIntervalSince(start)
+            try await backend.disconnect()
             return BenchmarkResult(
                 scenario: "small_download_\(count)_files",
                 backend: "citadel",
@@ -139,7 +141,6 @@ struct BenchmarkRunner {
         let remoteDir = "\(config.dataDirectory.path)/bench/small"
         let backend = CitadelSFTPBackend()
         try await backend.connect(configuration: config.sessionConfiguration())
-        defer { Task { try? await backend.disconnect() } }
 
         let start = Date()
         let entries = try await backend.listDirectory(at: remoteDir)
@@ -148,6 +149,7 @@ struct BenchmarkRunner {
         let (opensshTime, count) = try OpenSSHSFTPBaseline.listDirectory(remoteDir: remoteDir, config: config)
         let ratio = opensshTime / max(citadelTime, 0.001)
 
+        try await backend.disconnect()
         return BenchmarkResult(
             scenario: "list_directory",
             backend: "citadel vs openssh",
@@ -170,7 +172,6 @@ struct BenchmarkRunner {
 
         let backend = CitadelSFTPBackend()
         try await backend.connect(configuration: config.sessionConfiguration())
-        defer { Task { try? await backend.disconnect() } }
         _ = try await backend.upload(localURL: local, remotePath: remote, options: TransferOptions())
 
         let partial = config.workDirectory.appendingPathComponent("resume_partial.bin")
@@ -188,6 +189,7 @@ struct BenchmarkRunner {
         let actual = try Checksum.sha256(of: partial)
         let match = expected == actual
 
+        try await backend.disconnect()
         return BenchmarkResult(
             scenario: "resume_download_50pct",
             backend: "citadel",

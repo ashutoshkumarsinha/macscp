@@ -1,8 +1,22 @@
+// SessionLoginView.swift — Profile sidebar and connection form (key / password / agent).
+
 import SwiftUI
+import MacSCPCore
 
 struct SessionLoginView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
+    @State private var profileSearchText = ""
+
+    private var filteredProfiles: [SessionProfile] {
+        let query = profileSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return appModel.profiles }
+        return appModel.profiles.filter {
+            $0.name.localizedCaseInsensitiveContains(query)
+                || $0.host.localizedCaseInsensitiveContains(query)
+                || $0.username.localizedCaseInsensitiveContains(query)
+        }
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -20,7 +34,7 @@ struct SessionLoginView: View {
             set: { if let id = $0 { appModel.selectProfile(id) } }
         )) {
             Section("Saved Sessions") {
-                ForEach(appModel.profiles) { profile in
+                ForEach(filteredProfiles) { profile in
                     Label {
                         Text(profile.name)
                     } icon: {
@@ -32,7 +46,7 @@ struct SessionLoginView: View {
             }
         }
         .listStyle(.sidebar)
-        .searchable(text: .constant(""), prompt: "Search Profiles")
+        .searchable(text: $profileSearchText, prompt: "Search Profiles")
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
                 Button("", systemImage: "plus") {
@@ -41,9 +55,7 @@ struct SessionLoginView: View {
                 }
                 Button("", systemImage: "minus") {
                     if let id = appModel.selectedProfileID {
-                        appModel.profiles.removeAll { $0.id == id }
-                        appModel.selectedProfileID = appModel.profiles.first?.id
-                        appModel.syncDraftFromSelection()
+                        appModel.deleteProfile(id: id)
                     }
                 }
             }
@@ -60,12 +72,20 @@ struct SessionLoginView: View {
             TextField("Port", text: Bindable(appModel).draft.port)
             TextField("Username", text: Bindable(appModel).draft.username)
 
-            Toggle("Use SSH Key", isOn: Bindable(appModel).draft.useKeyAuth)
+            Picker("Authentication", selection: Bindable(appModel).draft.authMethod) {
+                Text("SSH Key File").tag(AuthMethod.publicKey)
+                Text("Password").tag(AuthMethod.password)
+                Text("SSH Agent").tag(AuthMethod.agent)
+            }
 
-            if appModel.draft.useKeyAuth {
+            if appModel.draft.authMethod == .publicKey {
                 TextField("SSH Key", text: Bindable(appModel).draft.keyPath)
-            } else {
+            } else if appModel.draft.authMethod == .password {
                 SecureField("Password", text: Bindable(appModel).draft.password)
+            } else if appModel.draft.authMethod == .agent {
+                Text("Uses keys from SSH_AUTH_SOCK (ssh-agent).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             TextField("Initial Remote Path", text: Bindable(appModel).draft.initialRemotePath)
@@ -79,7 +99,7 @@ struct SessionLoginView: View {
                     Task { await appModel.connect() }
                 }
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(appModel.isConnecting || appModel.draft.host.isEmpty)
+                .disabled(appModel.isConnecting || appModel.draft.host.isEmpty || !appModel.draft.validatePort())
             }
         }
         .formStyle(.grouped)

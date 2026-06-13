@@ -10,6 +10,7 @@ let package = Package(
     products: [
         .library(name: "MacSCPCore", targets: ["MacSCPCore"]),
         .library(name: "MacSCPBackends", targets: ["MacSCPBackends"]),
+        .library(name: "MacSCPUI", targets: ["MacSCPUI"]),
         .executable(name: "macscp-benchmark", targets: ["MacSCPBenchmark"]),
         .executable(name: "MacSCP", targets: ["MacSCPApp"]),
     ],
@@ -47,12 +48,20 @@ let package = Package(
             dependencies: [
                 "MacSCPCore",
                 "MacSCPBackends",
+                "MacSCPUI",
             ],
             path: "Sources/MacSCPApp"
         ),
+        .target(
+            name: "MacSCPUI",
+            dependencies: [
+                "MacSCPCore",
+                "MacSCPBackends",
+            ]
+        ),
         .testTarget(
             name: "MacSCPTests",
-            dependencies: ["MacSCPCore", "MacSCPBackends"]
+            dependencies: ["MacSCPCore", "MacSCPBackends", "MacSCPUI"]
         ),
     ]
 )
