@@ -49,8 +49,10 @@ final class TransferCoordinator {
                 let dirURL = localPane.localPath.appendingPathComponent(entry.name, isDirectory: true)
                 do {
                     onStatusMessage?("Scanning \(entry.name)…")
-                let remoteBase = SFTPPathJoin.joinRemote(remotePath, entry.name)
-                    let files = try DirectoryTransferPlanner.expandLocalDirectory(at: dirURL, remoteBase: remoteBase)
+                    let remoteBase = SFTPPathJoin.joinRemote(remotePath, entry.name)
+                    let files = try await Task.detached(priority: .userInitiated) {
+                        try DirectoryTransferPlanner.expandLocalDirectory(at: dirURL, remoteBase: remoteBase)
+                    }.value
                     items += files.map { file in
                         PendingTransferItem(
                             localURL: file.localURL,
@@ -99,7 +101,7 @@ final class TransferCoordinator {
             switch entry.type {
             case .directory:
                 do {
-                onStatusMessage?("Scanning remote \(entry.name)…")
+                    onStatusMessage?("Scanning remote \(entry.name)…")
                     let localBase = localPane.localPath.appendingPathComponent(entry.name, isDirectory: true)
                     let files = try await DirectoryTransferPlanner.expandRemoteDirectory(
                         backend: backend,

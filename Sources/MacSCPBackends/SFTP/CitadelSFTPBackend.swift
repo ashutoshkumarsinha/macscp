@@ -21,6 +21,7 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
     private var configuration: SessionConfiguration?
     private var pathResolver = SFTPPathResolver()
     private let directoryCache = SFTPDirectoryCache()
+    private let listingCache = SFTPListingCache()
 
     public private(set) var isConnected = false
 
@@ -43,12 +44,10 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
             category: .backend
         )
 
-        let sshClient = try await SSHClient.connect(
-            host: configuration.host,
-            port: configuration.port,
+        let sshClient = try await CitadelTCPConnector.connect(
+            configuration: configuration,
             authenticationMethod: authMethod,
-            hostKeyValidator: hostKeyValidator,
-            reconnect: .never
+            hostKeyValidator: hostKeyValidator
         )
 
         let sftpClient = try await sshClient.openSFTP()
@@ -87,8 +86,11 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
     public func listDirectory(at path: String) async throws -> [RemoteEntry] {
         let sftp = try requireSFTP()
         let resolved = pathResolver.resolve(path)
+        if let cached = await listingCache.listing(for: resolved) {
+            return cached
+        }
         let rawEntries = try await sftp.listDirectory(atPath: resolved)
-        return rawEntries
+        let entries = rawEntries
             .flatMap(\.components)
             .filter { $0.filename != "." && $0.filename != ".." }
             .map { component in
@@ -100,6 +102,8 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
                     permissions: component.attributes.permissions.map { FilePermissions(octal: $0) }
                 )
             }
+        await listingCache.store(entries, for: resolved)
+        return entries
     }
 
     public func stat(path: String) async throws -> RemoteEntry {
@@ -282,40 +286,39 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
 
         let flags: SFTPOpenFileFlags = offset > 0 ? [.write] : [.write, .create, .truncate]
         let file = try await sftp.openFile(filePath: resolved, flags: flags)
-        let handle = try FileHandle(forReadingFrom: localURL)
-        defer { try? handle.close() }
-
-        if offset > 0 {
-            try handle.seek(toOffset: offset)
-        }
 
         let transferID = UUID()
+        let streamingChecksum = options.checksum == .sha256 && options.verifyChecksum
+            ? StreamingSHA256()
+            : nil
 
         let bytesWritten: Int64
         do {
             if options.maxConcurrentWrites > 1 {
                 bytesWritten = try await CitadelPipelinedWriter.upload(
                     file: file,
-                    readHandle: handle,
+                    localURL: localURL,
                     totalSize: totalSize,
                     startOffset: offset,
                     chunkSize: chunkSize,
                     transferID: transferID,
                     remotePath: resolved,
                     progress: options.progress,
-                    cancellation: options.cancellation
+                    cancellation: options.cancellation,
+                    checksum: streamingChecksum
                 )
             } else {
                 bytesWritten = try await uploadLargeFileSequential(
                     file: file,
-                    handle: handle,
+                    localURL: localURL,
                     totalSize: totalSize,
                     startOffset: offset,
                     chunkSize: chunkSize,
                     transferID: transferID,
                     resolved: resolved,
                     resumedFrom: resumedFrom,
-                    options: options
+                    options: options,
+                    checksum: streamingChecksum
                 )
             }
         } catch {
@@ -323,10 +326,11 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
             throw error
         }
         try await file.close()
+        await listingCache.invalidate(path: resolved)
 
         var checksum: String?
-        if options.checksum == .sha256, options.verifyChecksum {
-            checksum = try Checksum.sha256(of: localURL)
+        if let streamingChecksum {
+            checksum = streamingChecksum.finalizeHex()
         }
 
         return TransferResult(
@@ -338,25 +342,30 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
 
     private func uploadLargeFileSequential(
         file: SFTPFile,
-        handle: FileHandle,
+        localURL: URL,
         totalSize: Int,
         startOffset: UInt64,
         chunkSize: Int,
         transferID: UUID,
         resolved: String,
         resumedFrom: Int64?,
-        options: TransferOptions
+        options: TransferOptions,
+        checksum: StreamingSHA256?
     ) async throws -> Int64 {
+        let reader = try LocalFileSequentialReader(url: localURL)
         var offset = startOffset
         let start = Date()
 
         while Int(offset) < totalSize {
             try options.throwIfCancelled()
             let toRead = min(chunkSize, totalSize - Int(offset))
-            let chunk = try handle.read(upToCount: toRead) ?? Data()
+            let chunk = try reader.read(from: Int(offset), count: toRead)
             if chunk.isEmpty { break }
-            let buffer = ByteBuffer(data: chunk)
+            checksum?.update(chunk)
+            var buffer = TransferBufferPool.borrow(capacity: chunk.count)
+            buffer.writeBytes(chunk)
             try await file.write(buffer, at: offset)
+            TransferBufferPool.recycle(buffer)
             offset += UInt64(chunk.count)
 
             if let progress = options.progress {

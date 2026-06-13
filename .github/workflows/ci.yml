@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: macos-15  # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and test
+        run: make check
+
+  benchmark:
+    runs-on: macos-15  # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Apple Silicon benchmark suite
+        run: make bench-apple-silicon
+
+      - name: Verify pass criteria
+        run: ./scripts/verify-benchmark-report.sh
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report-macos-15
+          path: |
+            .benchmark/benchmark-results/report.json
+            .benchmark/benchmark-results/upload-spike.json
+          if-no-files-found: ignore

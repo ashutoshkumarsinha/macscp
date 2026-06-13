@@ -128,9 +128,9 @@ Select a profile in the sidebar — the form updates. Change fields and click **
 | SSH agent | Supported | Uses `SSH_AUTH_SOCK` (ssh-agent); connects via Traversio backend |
 | Encrypted keys | Backend supports | Passphrase field coming in UI |
 
-### 5.4 Logs
+### 5.4 Configuration and logs
 
-MacSCP reads logging settings from `~/.macscp/config.toml` (created automatically on first launch). Log files are written to:
+MacSCP reads settings from `~/.macscp/config.toml` (created automatically on first launch). On **Apple Silicon**, a new config file defaults to `preset = "apple_silicon"` with tuned transfer values. Log files are written to:
 
 ```text
 ~/.macscp/logs/macscp-YYYY-MM-DD.log
@@ -148,7 +148,7 @@ retention_days = 14    # delete log files older than this (0 = keep all)
 mirror_stderr = false
 
 [transfer]
-preset = "default"     # default | lan | wan
+preset = "default"     # default | lan | wan | apple_silicon
 max_concurrent_transfers = 2
 max_concurrent_writes = 16
 max_concurrent_reads = 8
@@ -156,8 +156,10 @@ max_concurrent_uploads = 12
 chunk_size = 1048576
 resume = true
 verify_checksums = false
-use_traversio_for_performance = false  # AGPL — see §5.4
+use_traversio_for_performance = false  # AGPL — see §11 slow uploads
 ```
+
+Presets apply tuned defaults for concurrency and chunk size. On arm64 first launch, MacSCP writes `apple_silicon` instead of `default`. See [Apple Silicon Performance Guide](apple-silicon-performance.md).
 
 Host keys are stored with trust-on-first-use in `~/.macscp/known_hosts.json`. Set `hostKeyFingerprint` in a session profile's advanced settings to pin a specific key.
 
@@ -343,9 +345,9 @@ sftp user@host
 
 ### Slow Uploads
 
-MacSCP uses read-ahead pipelined SFTP I/O on the Citadel backend when `[transfer].max_concurrent_reads` / `max_concurrent_writes` > 1. When `max_concurrent_transfers` > 1, the app opens multiple SFTP connections (one per slot) so parallel queue jobs do not serialize on a single handle.
+MacSCP uses read-ahead pipelined SFTP I/O on the Citadel backend when `[transfer].max_concurrent_reads` / `max_concurrent_writes` > 1. When `max_concurrent_transfers` > 1, the app opens multiple SFTP connections (one per slot) so parallel queue jobs do not serialize on a single handle. Citadel also applies TCP send/receive buffer sizes and `TCP_NODELAY` from the active preset after connect.
 
-**Presets:** set `preset = "lan"` for high-throughput LAN tuning, or `preset = "wan"` for conservative settings. Explicit keys listed after `preset` override preset defaults.
+**Presets:** set `preset = "lan"`, `"wan"`, or `"apple_silicon"` for tuned defaults. See [Apple Silicon Performance Guide](apple-silicon-performance.md).
 
 **Traversio performance mode:** `use_traversio_for_performance = true` switches key/password sessions to the Traversio backend (AGPL). SSH agent sessions always use Traversio.
 

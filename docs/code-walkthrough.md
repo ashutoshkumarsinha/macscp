@@ -119,15 +119,20 @@ Both `CitadelSFTPBackend` and `TraversioSFTPBackend` use:
 
 ```bash
 make build    # compile
-make test     # 42 tests (39 XCTest + 3 Swift Testing)
+make test     # 53 tests (50 XCTest + 3 Swift Testing)
+make check    # build + test
+make ci         # check + bench-verify (matches GitHub Actions)
 make run      # start test server + open app
 make paths    # show config/log/profile paths
 make logs     # tail today's log
+make bench-verify
 ```
 
 Tests live in `Tests/MacSCPTests/` — read them to see expected behavior.
 
 Local SFTP fixture: `./scripts/benchmark-env.sh start` (port 2222, keys in `.benchmark/keys/`).
+
+See [Apple Silicon Performance Guide](apple-silicon-performance.md) for presets, benchmarks, and CI scripts.
 
 ---
 

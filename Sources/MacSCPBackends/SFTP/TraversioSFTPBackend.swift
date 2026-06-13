@@ -18,6 +18,7 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
     private var configuration: SessionConfiguration?
     private var pathResolver = SFTPPathResolver()
     private let directoryCache = SFTPDirectoryCache()
+    private let listingCache = SFTPListingCache()
 
     public private(set) var isConnected = false
 
@@ -62,8 +63,11 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
     public func listDirectory(at path: String) async throws -> [RemoteEntry] {
         let sftp = try requireSFTP()
         let resolved = pathResolver.resolve(path)
+        if let cached = await listingCache.listing(for: resolved) {
+            return cached
+        }
         let names = try await sftp.listDirectory(resolved)
-        return names
+        let entries = names
             .filter { $0.filename != "." && $0.filename != ".." }
             .map { name in
             RemoteEntry(
@@ -74,6 +78,8 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
                 permissions: name.attributes.permissions.map { FilePermissions(octal: $0) }
             )
         }
+        await listingCache.store(entries, for: resolved)
+        return entries
     }
 
     public func stat(path: String) async throws -> RemoteEntry {
@@ -231,6 +237,8 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
         if options.checksum == .sha256, options.verifyChecksum {
             checksum = try Checksum.sha256(of: localURL)
         }
+
+        await listingCache.invalidate(path: resolved)
 
         return TransferResult(bytesTransferred: Int64(bytes), checksum: checksum)
     }
