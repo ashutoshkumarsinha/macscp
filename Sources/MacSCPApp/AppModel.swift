@@ -41,8 +41,14 @@ final class AppModel: TransferBackendProvider {
     var workspacesForTabs: [SessionTabWorkspace] { workspaces }
     var selectedTabID: UUID? {
         get { selectedWorkspaceID ?? workspaces.first?.id }
-        set { selectedWorkspaceID = newValue }
+        set {
+            selectedWorkspaceID = newValue
+            persistTabsIfNeeded()
+        }
     }
+
+    var canNavigateBack: Bool { localPane.canNavigateBack || remotePane.canNavigateBack }
+    var canNavigateForward: Bool { localPane.canNavigateForward || remotePane.canNavigateForward }
 
     private var activeWorkspace: SessionTabWorkspace {
         if let id = selectedWorkspaceID, let match = workspaces.first(where: { $0.id == id }) {
@@ -185,10 +191,6 @@ final class AppModel: TransferBackendProvider {
 
     init() {
         wireCoordinators()
-        for workspace in workspaces {
-            wireWorkspace(workspace)
-        }
-
         if let settings = try? MacSCPConfiguration.loadSettings(
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser
         ) {
@@ -197,6 +199,22 @@ final class AppModel: TransferBackendProvider {
             transfers.applyFeatureSettings(settings.features)
             featureSettings = settings.features
             ICloudProfileSyncService.setEnabled(settings.features.iCloudProfileSyncEnabled)
+        }
+
+        if featureSettings.persistTabsEnabled, let saved = TabPersistenceStore.load() {
+            workspaces = saved.tabs.map { savedTab in
+                let workspace = SessionTabWorkspace()
+                workspace.title = savedTab.title
+                workspace.localPane.restorePath(URL(fileURLWithPath: savedTab.localPath, isDirectory: true))
+                workspace.remotePane.restorePath(savedTab.remotePath)
+                workspace.sessionCoordinator.remotePath = savedTab.remotePath
+                return workspace
+            }
+            selectedWorkspaceID = saved.selectedID ?? workspaces.first?.id
+        }
+
+        for workspace in workspaces {
+            wireWorkspace(workspace)
         }
 
         ICloudProfileSyncService.pullAndMerge(into: &profileCoordinator.profiles)
@@ -268,6 +286,7 @@ final class AppModel: TransferBackendProvider {
         wireWorkspace(workspace)
         selectedWorkspaceID = workspace.id
         showLogin = true
+        persistTabsIfNeeded()
     }
 
     func closeSelectedTab() async {
@@ -276,10 +295,24 @@ final class AppModel: TransferBackendProvider {
         await workspaces[index].sessionCoordinator.disconnect()
         workspaces.remove(at: index)
         selectedWorkspaceID = workspaces.first?.id
+        persistTabsIfNeeded()
     }
 
     func selectTab(_ id: UUID) {
         selectedWorkspaceID = id
+    }
+
+    private func persistTabsIfNeeded() {
+        guard featureSettings.persistTabsEnabled else { return }
+        let tabs = workspaces.map {
+            SavedTabState(
+                id: $0.id,
+                title: $0.title,
+                localPath: $0.localPane.localPath.path,
+                remotePath: $0.sessionCoordinator.remotePath
+            )
+        }
+        TabPersistenceStore.save(tabs: tabs, selectedID: selectedTabID)
     }
 
     func syncDraftFromSelection() { profileCoordinator.syncDraftFromSelection() }
@@ -392,6 +425,22 @@ final class AppModel: TransferBackendProvider {
     }
 
     func navigateLocalUp() { localPane.navigateUp() }
+
+    func navigateBack() async {
+        _ = localPane.navigateBack()
+        if let path = remotePane.navigateBack(from: sessionCoordinator.remotePath) {
+            sessionCoordinator.remotePath = path
+            await refreshRemote()
+        }
+    }
+
+    func navigateForward() async {
+        _ = localPane.navigateForward()
+        if let path = remotePane.navigateForward(from: sessionCoordinator.remotePath) {
+            sessionCoordinator.remotePath = path
+            await refreshRemote()
+        }
+    }
 
     func navigateRemoteUp() async {
         sessionCoordinator.remotePath = remotePane.navigateUp(from: sessionCoordinator.remotePath)

@@ -35,7 +35,7 @@ This guide covers what is **implemented in v0.3**, including Phase 3 cloud proto
 git clone <repository-url> macscp
 cd macscp
 make build
-make test    # 138 XCTest + 3 Swift Testing
+make test    # 144 XCTest + 3 Swift Testing (+ make integration-test for live SFTP)
 make check   # build + test (same as CI first step)
 ```
 
@@ -279,8 +279,12 @@ Right-click a file or folder in either pane:
 ```bash
 make cli
 ./scripts/macscp open sftp://user@127.0.0.1:2222/ --batch
+./scripts/macscp sync ./local /remote --mirror --delete --preview
+./scripts/macscp --session="My Profile" ls /
 make package-cli   # sudo: installs /usr/local/bin/macscp
 ```
+
+Commands: `open`, `close`, `ls`, `get`, `put`, `sync`, `cd`, `lcd`, `pwd`, `lpwd`, `rm`, `mkdir`, `mv`, `chmod`, `call`, `script`, `version`. Global flags: `--session`, `--batch`, `--ini none`, `--hostkey`, `--timeout`, `--json`, `--quiet`. Run `macscp script.macscp` or `macscp script script.macscp`.
 
 Release `.app` bundles the same CLI at `MacSCP.app/Contents/MacOS/macscp`. Swift package product: **`macscp-cli`**. See [cli-reference.md](cli-reference.md).
 
@@ -517,7 +521,7 @@ end tell
 
 ### Proxy and ProxyJump
 
-MacSCP reads `~/.ssh/config` when connecting. If your profile host matches a `Host` alias, MacSCP applies `HostName`, `Port`, `User`, `IdentityFile`, and `ProxyJump` from that block (profile proxy settings take precedence over config).
+MacSCP reads `~/.ssh/config` when connecting, including **`Include`** directives. If your profile host matches a `Host` alias, MacSCP applies `HostName`, `Port`, `User`, `IdentityFile`, and `ProxyJump` from matching blocks (profile proxy settings take precedence over config).
 
 In the connection form, set **Proxy → Jump host** to connect through a bastion without editing `~/.ssh/config`. Jump connections use the Traversio backend automatically.
 
@@ -527,7 +531,11 @@ CLI equivalent:
 macscp-cli open sftp://deploy@production/var/www --rawsettings ProxyJump=jump1,jump2
 ```
 
-`ProxyCommand` from OpenSSH config is not supported; use `ProxyJump` or an explicit jump host in the profile instead.
+`ProxyCommand` from `~/.ssh/config` is merged into the session and executed at connect time (local TCP relay to the subprocess). You can also pass it explicitly:
+
+```bash
+macscp-cli open sftp://deploy@production --rawsettings proxycommand='ssh -W %h:%p bastion'
+```
 
 ---
 
@@ -535,7 +543,7 @@ macscp-cli open sftp://deploy@production/var/www --rawsettings ProxyJump=jump1,j
 
 ### Multi-session tabs
 
-Use **⌘T** to open a new tab and **⌘W** to close the active tab. Each tab maintains its own connection and remote path.
+Use **⌘T** to open a new tab and **⌘W** to close the active tab. Each tab maintains its own connection and remote path. Tab titles and pane paths **persist across relaunch** when `persist_tabs = true` in `[app]` (default); sessions are not auto-reconnected. Toolbar **back/forward** navigates local and remote history.
 
 ### Explorer layout
 
@@ -564,8 +572,8 @@ Connection form **Advanced → Proxy**: HTTP CONNECT, SOCKS5, or SSH jump host. 
 The following remain **planned** or require distribution signing:
 
 - **Mac App Store** build with full sandbox + notarized release pipeline
-- **ProxyCommand** tunneling (use ProxyJump or profile jump host)
-- **Full WinSCP script parity** (advanced `call`, `.NET`, tunnel UI)
+- **CLI:** FTP/FTPS mode flags on `open`, `option reconnecttime`
+- **Full WinSCP script parity** (remote globs, symlinks via `call`, tunnel UI)
 
 ---
 

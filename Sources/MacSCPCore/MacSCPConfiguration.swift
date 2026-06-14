@@ -121,6 +121,7 @@ transfer_history = false
 notify_on_queue_complete = false
 icloud_profile_sync = false
 ui_layout = "commander"
+persist_tabs = true
 
 # Apple Silicon tuned preset (also available: lan, wan, apple_silicon):
 # preset = "apple_silicon"
@@ -176,6 +177,7 @@ ui_layout = "commander"
             "notify_on_queue_complete = \(features.notifyOnQueueComplete)",
             "icloud_profile_sync = \(features.iCloudProfileSyncEnabled)",
             "ui_layout = \"\(features.uiLayoutMode.rawValue)\"",
+            "persist_tabs = \(features.persistTabsEnabled)",
         ]
 
         if let start = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "[app]" }) {
@@ -331,6 +333,8 @@ ui_layout = "commander"
             settings.iCloudProfileSyncEnabled = parseBool(value) ?? settings.iCloudProfileSyncEnabled
         case "ui_layout":
             settings.uiLayoutMode = UILayoutMode(rawValue: unquote(value).lowercased()) ?? settings.uiLayoutMode
+        case "persist_tabs":
+            settings.persistTabsEnabled = parseBool(value) ?? settings.persistTabsEnabled
         default:
             break
         }

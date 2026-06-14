@@ -68,7 +68,7 @@ Sources/
   MacSCPCLI/          macscp-cli headless session runner
   MacSCPBenchmark/    macscp-benchmark CLI for throughput spikes
 Tests/
-  MacSCPTests/        Unit + integration tests (**138** XCTest + **3** Swift Testing)
+  MacSCPTests/        Unit + integration tests (**144** XCTest + **3** Swift Testing)
 scripts/
   benchmark-env.sh    Local OpenSSH SFTP on :2222
   run-benchmarks.sh   Benchmark runner (--verify optional)
@@ -98,7 +98,7 @@ MacSCPTests ──▶ MacSCPCore, MacSCPBackends, MacSCPUI
 | **MacSCPBackends** | SFTP/SCP/FTP/WebDAV/S3/GCS implementations, `TraversioSSHConfigurationBuilder` (ProxyJump + HTTP/SOCKS), pipelined Citadel I/O, host-key TOFU, agent auth |
 | **MacSCPUI** | Background transfer queue, job state machine, overwrite batch model |
 | **MacSCPApp** | SwiftUI shell, coordinator decomposition, tabs, explorer layout, session profiles, commander panes |
-| **MacSCPCLI** | `macscp-cli` — open/ls/get/put/sync/script with OpenSSH merge on connect |
+| **MacSCPCLI** | `macscp-cli` — full scriptable client with OpenSSH merge, sync masks/criteria, profile `--session` |
 | **MacSCPBenchmark** | Automated throughput comparison vs OpenSSH; embeds `BenchmarkHostInfo` in JSON reports |
 
 ---
@@ -336,7 +336,7 @@ TraversioSSHConfigurationBuilder.makeConfiguration()
 
 CLI path: `OpenSSHRawSettings.apply(--rawsettings …)` then `mergeOpenSSHConfig()` before connect.
 
-`ProxyCommand` is parsed but **not** executed (use ProxyJump or profile jump host).
+`ProxyCommand` from OpenSSH config is merged and executed via a local relay at connect time (Citadel and Traversio).
 
 ### 7.5 Upload/Download Performance Strategy
 
@@ -453,7 +453,7 @@ Pass criteria (spec): ≥ 90% OpenSSH throughput (large files); ≥ 80% (small f
 | `Phase3FeatureTests` | Cloud URL layout, feature settings |
 | `DirectorySyncEngineTests` | Compare rows, bidirectional plan |
 
-Run: `make test` or `swift test` (**138** XCTest + **3** Swift Testing). CI entry point: `make check` (requires Xcode 26 on GitHub Actions for Traversio / Swift 6.2).
+Run: `make test` or `swift test` (**144** XCTest + **3** Swift Testing). Optional live SFTP: `make integration-test`. CI: `make check` + integration job (requires Xcode 26 on GitHub Actions for Traversio / Swift 6.2).
 
 ---
 

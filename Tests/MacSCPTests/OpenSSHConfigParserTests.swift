@@ -5,6 +5,7 @@
 // OpenSSHConfigParser Host block parsing, merged settings, ProxyJump chains, and pattern matching.
 //
 import MacSCPCore
+import MacSCPBackends
 import XCTest
 
 final class OpenSSHConfigParserTests: XCTestCase {
@@ -313,7 +314,7 @@ final class OpenSSHConfigParserTests: XCTestCase {
         XCTAssertEqual(session.advanced.proxyHost, "cli-bastion")
     }
 
-    func testProxyCommandIsParsedButNotAppliedToSession() throws {
+    func testProxyCommandIsAppliedToSession() throws {
         let tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
@@ -331,6 +332,82 @@ final class OpenSSHConfigParserTests: XCTestCase {
 
         var session = SessionConfiguration(host: "via-command", username: "user")
         session.mergeOpenSSHConfig(configPath: configURL)
+        XCTAssertEqual(session.advanced.proxyCommand, "ssh -W %h:%p bastion")
         XCTAssertEqual(session.advanced.proxyType, .none)
+    }
+
+    func testProxyCommandTemplateExpansion() {
+        let configuration = SessionConfiguration(
+            host: "target.internal",
+            port: 2222,
+            username: "deploy"
+        )
+        let expanded = ProxyCommandTemplate.expand("ssh -W %h:%p %r@jump", configuration: configuration)
+        XCTAssertEqual(expanded, "ssh -W target.internal:2222 deploy@jump")
+    }
+
+    func testIncludeMergesBlocksFromSecondaryFile() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fragmentURL = tempDir.appendingPathComponent("fragment.conf")
+        try """
+        Host included-host
+            HostName included.example
+            Port 2222
+        """.write(to: fragmentURL, atomically: true, encoding: .utf8)
+
+        let configURL = tempDir.appendingPathComponent("config")
+        try """
+        Include fragment.conf
+        Host *
+            Port 22
+        """.write(to: configURL, atomically: true, encoding: .utf8)
+
+        let settings = OpenSSHConfigParser.mergedSettings(forHost: "included-host", port: nil, configPath: configURL)
+        XCTAssertEqual(settings?.hostName, "included.example")
+        XCTAssertEqual(settings?.port, 2222)
+    }
+
+    func testIncludeDetectsCycles() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let configURL = tempDir.appendingPathComponent("config")
+        try """
+        Include config
+        Host loop
+            HostName loop.example
+        """.write(to: configURL, atomically: true, encoding: .utf8)
+
+        let blocks = try OpenSSHConfigParser.load(from: configURL)
+        let settings = OpenSSHConfigParser.mergedSettings(forHost: "loop", port: nil, blocks: blocks)
+        XCTAssertEqual(settings?.hostName, "loop.example")
+    }
+
+    func testResolveJumpChainUsesIncludedConfig() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let fragmentURL = tempDir.appendingPathComponent("jumps.conf")
+        try """
+        Host jumpbox
+            HostName jump.internal
+            Port 8022
+        """.write(to: fragmentURL, atomically: true, encoding: .utf8)
+
+        let configURL = tempDir.appendingPathComponent("config")
+        try "Include jumps.conf\n".write(to: configURL, atomically: true, encoding: .utf8)
+
+        let blocks = try OpenSSHConfigParser.load(from: configURL)
+        let chain = OpenSSHConfigParser.resolveJumpChain(tokens: ["jumpbox"], defaultUsername: "deploy", blocks: blocks)
+        XCTAssertEqual(chain.first?.host, "jump.internal")
+        XCTAssertEqual(chain.first?.port, 8022)
     }
 }

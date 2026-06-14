@@ -2,7 +2,7 @@
 #
 # Usage:
 #   make              # show targets
-#   make build test   # compile and run tests (138 tests)
+#   make build test   # compile and run tests (144 XCTest + 3 Swift Testing)
 #   make run          # launch MacSCP (starts local SFTP fixture first)
 #
 # Related: scripts/benchmark-env.sh, scripts/ci-local.sh, docs/user-guide.md
@@ -20,7 +20,7 @@ VERIFY_BENCH := $(SCRIPTS)/verify-benchmark-report.sh
 CONFIG      := $(HOME)/.macscp/config.toml
 LOG_DIR     := $(HOME)/.macscp/logs
 
-.PHONY: help build build-release test check ci clean run cli \
+.PHONY: help build build-release test check integration-test ci clean run cli \
         server-start server-stop server-restart server-status \
         bench bench-full bench-upload-spike bench-apple-silicon bench-profile bench-verify \
         build-release package-dmg package-cli icon \
@@ -52,8 +52,11 @@ clean: ## Remove build artifacts
 
 # --- Test ---
 
-test: build ## Run unit tests (138 tests)
+test: build ## Run unit tests
 	$(SWIFT) test
+
+integration-test: build server-start ## Live SFTP smoke tests (MACSCP_INTEGRATION=1)
+	MACSCP_INTEGRATION=1 $(SWIFT) test --filter LiveSFTPIntegrationTests
 
 check: build test ## Build + test (CI-friendly)
 

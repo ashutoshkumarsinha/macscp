@@ -15,6 +15,11 @@ import Observation
 final class RemotePaneCoordinator {
     var remoteEntries: [RemoteEntry] = []
     var selectedRemoteNames = Set<String>()
+    private var backStack: [String] = []
+    private var forwardStack: [String] = []
+
+    var canNavigateBack: Bool { !backStack.isEmpty }
+    var canNavigateForward: Bool { !forwardStack.isEmpty }
 
     var onStatusMessage: ((String) -> Void)?
 
@@ -30,6 +35,7 @@ final class RemotePaneCoordinator {
     }
 
     func navigateUp(from remotePath: String) -> String {
+        pushHistory(current: remotePath)
         selectedRemoteNames = []
         var path = (remotePath as NSString).deletingLastPathComponent
         if path.isEmpty { path = "/" }
@@ -37,10 +43,36 @@ final class RemotePaneCoordinator {
     }
 
     func openDirectory(_ name: String, from remotePath: String) -> String {
+        pushHistory(current: remotePath)
         selectedRemoteNames = []
         if remotePath.hasSuffix("/") {
             return remotePath + name
         }
         return remotePath + "/" + name
+    }
+
+    func navigateBack(from remotePath: String) -> String? {
+        guard let previous = backStack.popLast() else { return nil }
+        forwardStack.append(remotePath)
+        selectedRemoteNames = []
+        return previous
+    }
+
+    func navigateForward(from remotePath: String) -> String? {
+        guard let next = forwardStack.popLast() else { return nil }
+        backStack.append(remotePath)
+        selectedRemoteNames = []
+        return next
+    }
+
+    func restorePath(_ path: String) {
+        backStack.removeAll()
+        forwardStack.removeAll()
+        selectedRemoteNames = []
+    }
+
+    private func pushHistory(current: String) {
+        backStack.append(current)
+        forwardStack.removeAll()
     }
 }

@@ -61,16 +61,26 @@ public enum DirectorySyncEngine {
     public static func compare(
         localRoot: URL,
         remoteRoot: String,
-        backend: TransferBackend
+        backend: TransferBackend,
+        options: SyncCompareOptions = SyncCompareOptions()
     ) async throws -> [SyncCompareRow] {
         let localFiles = try indexLocalFiles(at: localRoot)
         let remoteFiles = try await indexRemoteFiles(backend: backend, at: remoteRoot)
-        let allPaths = Set(localFiles.keys).union(remoteFiles.keys).sorted()
+        let allPaths = Set(localFiles.keys).union(remoteFiles.keys)
+            .filter { options.fileMask.matches(relativePath: $0) }
+            .sorted()
 
         return allPaths.map { relative in
             let local = localFiles[relative]
             let remote = remoteFiles[relative]
-            return buildRow(relative: relative, local: local, remote: remote, localRoot: localRoot, remoteRoot: remoteRoot)
+            return buildRow(
+                relative: relative,
+                local: local,
+                remote: remote,
+                localRoot: localRoot,
+                remoteRoot: remoteRoot,
+                criteria: options.criteria
+            )
         }
     }
 
@@ -128,6 +138,47 @@ public enum DirectorySyncEngine {
             plan.localDeletes = rows.filter { $0.status == .newRemote }.compactMap(\.localURL)
         }
         return plan
+    }
+
+    public struct MirrorTransferPlan: Sendable, Equatable {
+        public var transfers: [DirectoryTransferFile]
+        public var remoteDeletes: [String]
+        public var localDeletes: [URL]
+
+        public init(
+            transfers: [DirectoryTransferFile] = [],
+            remoteDeletes: [String] = [],
+            localDeletes: [URL] = []
+        ) {
+            self.transfers = transfers
+            self.remoteDeletes = remoteDeletes
+            self.localDeletes = localDeletes
+        }
+    }
+
+    public static func mirrorPlan(
+        rows: [SyncCompareRow],
+        direction: SyncDirection,
+        deleteExtraneous: Bool
+    ) -> MirrorTransferPlan {
+        let transfers = toTransferFiles(rows: rows, direction: direction)
+        guard deleteExtraneous else {
+            return MirrorTransferPlan(transfers: transfers)
+        }
+        switch direction {
+        case .mirrorLocalToRemote:
+            return MirrorTransferPlan(
+                transfers: transfers,
+                remoteDeletes: rows.filter { $0.status == .newRemote }.compactMap(\.remotePath)
+            )
+        case .mirrorRemoteToLocal:
+            return MirrorTransferPlan(
+                transfers: transfers,
+                localDeletes: rows.filter { $0.status == .newLocal }.compactMap(\.localURL)
+            )
+        case .bidirectional:
+            return MirrorTransferPlan(transfers: transfers)
+        }
     }
 
     private static func uploads(from rows: [SyncCompareRow]) -> [DirectoryTransferFile] {
@@ -226,7 +277,8 @@ public enum DirectorySyncEngine {
         local: LocalIndexEntry?,
         remote: RemoteIndexEntry?,
         localRoot: URL,
-        remoteRoot: String
+        remoteRoot: String,
+        criteria: SyncCompareCriteria = .time
     ) -> SyncCompareRow {
         let remotePath = remote?.path ?? SFTPPathJoin.joinRemote(SFTPPathJoin.normalizeRemote(remoteRoot), relative)
         let localURL = local?.url ?? localRoot.appendingPathComponent(relative)
@@ -253,7 +305,21 @@ public enum DirectorySyncEngine {
                 localModified: local.modified
             )
         case (let local?, let remote?):
-            if local.size != remote.size {
+            let base = SyncCompareRow(
+                relativePath: relative,
+                status: .same,
+                localURL: local.url,
+                remotePath: remote.path,
+                localSize: local.size,
+                remoteSize: remote.size,
+                localModified: local.modified,
+                remoteModified: remote.modified
+            )
+            switch criteria {
+            case .size:
+                if local.size == remote.size {
+                    return base
+                }
                 return SyncCompareRow(
                     relativePath: relative,
                     status: .sizeMismatch,
@@ -264,13 +330,67 @@ public enum DirectorySyncEngine {
                     localModified: local.modified,
                     remoteModified: remote.modified
                 )
-            }
-            let localDate = local.modified ?? .distantPast
-            let remoteDate = remote.modified ?? .distantPast
-            if abs(localDate.timeIntervalSince(remoteDate)) < 1 {
+            case .checksum:
+                if local.size != remote.size {
+                    return SyncCompareRow(
+                        relativePath: relative,
+                        status: .sizeMismatch,
+                        localURL: local.url,
+                        remotePath: remote.path,
+                        localSize: local.size,
+                        remoteSize: remote.size,
+                        localModified: local.modified,
+                        remoteModified: remote.modified
+                    )
+                }
+                let localDate = local.modified ?? .distantPast
+                let remoteDate = remote.modified ?? .distantPast
+                if abs(localDate.timeIntervalSince(remoteDate)) < 1 {
+                    return base
+                }
                 return SyncCompareRow(
                     relativePath: relative,
-                    status: .same,
+                    status: .sizeMismatch,
+                    localURL: local.url,
+                    remotePath: remote.path,
+                    localSize: local.size,
+                    remoteSize: remote.size,
+                    localModified: local.modified,
+                    remoteModified: remote.modified
+                )
+            case .time:
+                if local.size != remote.size {
+                    return SyncCompareRow(
+                        relativePath: relative,
+                        status: .sizeMismatch,
+                        localURL: local.url,
+                        remotePath: remote.path,
+                        localSize: local.size,
+                        remoteSize: remote.size,
+                        localModified: local.modified,
+                        remoteModified: remote.modified
+                    )
+                }
+                let localDate = local.modified ?? .distantPast
+                let remoteDate = remote.modified ?? .distantPast
+                if abs(localDate.timeIntervalSince(remoteDate)) < 1 {
+                    return base
+                }
+                if localDate > remoteDate {
+                    return SyncCompareRow(
+                        relativePath: relative,
+                        status: .newerLocal,
+                        localURL: local.url,
+                        remotePath: remote.path,
+                        localSize: local.size,
+                        remoteSize: remote.size,
+                        localModified: local.modified,
+                        remoteModified: remote.modified
+                    )
+                }
+                return SyncCompareRow(
+                    relativePath: relative,
+                    status: .newerRemote,
                     localURL: local.url,
                     remotePath: remote.path,
                     localSize: local.size,
@@ -279,28 +399,6 @@ public enum DirectorySyncEngine {
                     remoteModified: remote.modified
                 )
             }
-            if localDate > remoteDate {
-                return SyncCompareRow(
-                    relativePath: relative,
-                    status: .newerLocal,
-                    localURL: local.url,
-                    remotePath: remote.path,
-                    localSize: local.size,
-                    remoteSize: remote.size,
-                    localModified: local.modified,
-                    remoteModified: remote.modified
-                )
-            }
-            return SyncCompareRow(
-                relativePath: relative,
-                status: .newerRemote,
-                localURL: local.url,
-                remotePath: remote.path,
-                localSize: local.size,
-                remoteSize: remote.size,
-                localModified: local.modified,
-                remoteModified: remote.modified
-            )
         }
     }
 }

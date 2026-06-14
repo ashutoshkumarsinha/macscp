@@ -13,7 +13,7 @@ public final class ObjectStorageTransferBackend: CapableTransferBackend, @unchec
     public let backendIdentifier: String
 
     public var capabilities: BackendCapabilities {
-        [.resumeUpload, .resumeDownload]
+        [.resumeUpload, .resumeDownload, .chmod]
     }
 
     private let provider: ObjectStorageLayout.Provider
@@ -165,7 +165,29 @@ public final class ObjectStorageTransferBackend: CapableTransferBackend, @unchec
     }
 
     public func setPermissions(_ permissions: FilePermissions, at path: String) async throws {
-        throw BackendError.notImplemented("Object storage permissions")
+        let layout = try requireLayout()
+        let credentials = try requireCredentials()
+        let key = layout.objectKey(for: path)
+        let acl = S3ObjectACL.canned(for: permissions)
+        let signed = try AWSSignatureV4.sign(
+            method: "PUT",
+            path: "/\(layout.bucket)/\(key)",
+            queryItems: [URLQueryItem(name: "acl", value: nil)],
+            headers: ["x-amz-acl": acl],
+            credentials: credentials,
+            layout: layout
+        )
+        var request = URLRequest(url: signed.url)
+        request.httpMethod = signed.method
+        signed.headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (_, response) = try await HTTPClient.data(for: request)
+        guard (200 ... 299).contains(response.statusCode) else {
+            throw BackendError.transferFailed("PutObjectAcl failed (\(response.statusCode))")
+        }
+    }
+
+    public func setOwnership(user: String?, group: String?, at path: String) async throws {
+        throw BackendError.notImplemented("Object storage chown")
     }
 
     public func upload(

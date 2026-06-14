@@ -16,27 +16,41 @@ actor CLISessionStore {
     private var configuration: SessionConfiguration?
     private var remotePath: String = "/"
     private var transferSettings = MacSCPTransferSettings()
+    private var settingsLoaded = false
 
     func loadSettings() throws {
+        guard !CLIRuntime.skipIni else {
+            settingsLoaded = true
+            return
+        }
         transferSettings = try MacSCPConfiguration.loadSettings(
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser
         ).transfer
+        settingsLoaded = true
+    }
+
+    func transferSettingsOrDefault() -> MacSCPTransferSettings {
+        transferSettings
     }
 
     func connect(_ configuration: SessionConfiguration) async throws {
         if let backend {
             try await backend.disconnect()
         }
-        if TransferProtocolDefaults.supportsSSHAuth(configuration.protocol) {
+        if !settingsLoaded {
+            try loadSettings()
+        }
+        if CLIRuntime.batchMode || TransferProtocolDefaults.supportsSSHAuth(configuration.protocol) {
             await HostKeyTrustGate.shared.setMode(.batchStrict)
         }
         defer {
-            if TransferProtocolDefaults.supportsSSHAuth(configuration.protocol) {
+            if TransferProtocolDefaults.supportsSSHAuth(configuration.protocol), !CLIRuntime.batchMode {
                 Task { await HostKeyTrustGate.shared.setMode(.silentTOFU) }
             }
         }
 
         var session = configuration
+        CLIRuntime.applyAdvanced(to: &session)
         session.networkProfile = TransferPerformanceTuning.networkProfile(from: transferSettings.preset)
 
         let backendKind = SFTPBackendSelector.select(
@@ -62,6 +76,7 @@ actor CLISessionStore {
         }
         backend = nil
         configuration = nil
+        remotePath = "/"
     }
 
     func backendOrThrow() throws -> TransferBackend {
@@ -74,6 +89,12 @@ actor CLISessionStore {
     func currentRemotePath() -> String { remotePath }
 
     func setRemotePath(_ path: String) { remotePath = path }
+
+    func resolveRemotePath(_ path: String) -> String {
+        if path.hasPrefix("/") { return path }
+        if remotePath == "/" { return "/\(path)" }
+        return "\(remotePath)/\(path)"
+    }
 }
 
 enum CLIError: Error, CustomStringConvertible {
@@ -83,6 +104,8 @@ enum CLIError: Error, CustomStringConvertible {
     case transferFailed(String)
     case authFailed
     case hostKeyRejected
+    case partialSuccess(String)
+    case interrupted
 
     var description: String {
         switch self {
@@ -92,17 +115,20 @@ enum CLIError: Error, CustomStringConvertible {
         case let .transferFailed(message): message
         case .authFailed: "Authentication failed"
         case .hostKeyRejected: "Host key rejected"
+        case let .partialSuccess(message): message
+        case .interrupted: "Interrupted"
         }
     }
 
     var exitCode: Int32 {
         switch self {
         case .usage: 1
-        case .connectionFailed: 2
+        case .connectionFailed, .notConnected: 2
         case .transferFailed: 3
         case .authFailed: 4
         case .hostKeyRejected: 5
-        case .notConnected: 2
+        case .partialSuccess: 10
+        case .interrupted: 6
         }
     }
 }
@@ -115,6 +141,7 @@ enum CLISessionBuilder {
         username: String,
         password: String?,
         keyPath: String?,
+        keyPassphrase: String?,
         authMethod: AuthMethod,
         remotePath: String,
         hostKeyFingerprint: String?,
@@ -127,6 +154,7 @@ enum CLISessionBuilder {
             username: username,
             password: password,
             keyPath: keyPath,
+            keyPassphrase: keyPassphrase,
             authMethod: authMethod,
             remotePath: remotePath,
             hostKeyFingerprint: hostKeyFingerprint,

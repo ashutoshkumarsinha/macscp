@@ -1,9 +1,64 @@
+# MacSCP — local/generated files (see Makefile, scripts/benchmark-env.sh)
+
+# --- Swift / SPM ---
 .build/
+.swiftpm/
+Packages/
+Package.pins
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+*.moved-aside
+*.hmap
+
+# --- Build & packaging ---
 build/
 dist/
-.swiftpm/
-*.xcodeproj
-.DS_Store
+*.dmg
+*.app
+
+# --- Local SFTP fixture & benchmarks (scripts/benchmark-env.sh) ---
 .benchmark/
-benchmark-results/
-Packages/
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# --- Coverage & profiling ---
+*.profraw
+*.profdata
+.coverage/
+coverage/
+*.lcov
+
+# --- Logs & temp ---
+*.log
+*.tmp
+*.swp
+*~
+.tmp/
+tmp/
+
+# --- Secrets & local env (never commit) ---
+.env
+.env.*
+!.env.example
+credentials.json
+
+# --- Editors & tooling ---
+.idea/
+.vscode/
+*.code-workspace
+.devbox/
+.devbox.lock
+
+# --- Carthage / legacy Swift PM ---
+Carthage/Build/

@@ -219,6 +219,18 @@ struct CommanderView: View {
 
     private var commanderToolbar: some View {
         HStack(spacing: 12) {
+            Button("", systemImage: "chevron.left") {
+                Task { await appModel.navigateBack() }
+            }
+            .disabled(!appModel.canNavigateBack)
+            .help("Back")
+
+            Button("", systemImage: "chevron.right") {
+                Task { await appModel.navigateForward() }
+            }
+            .disabled(!appModel.canNavigateForward)
+            .help("Forward")
+
             Button("", systemImage: "arrow.up") {
                 appModel.navigateLocalUp()
                 Task { await appModel.navigateRemoteUp() }

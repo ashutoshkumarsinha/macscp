@@ -26,6 +26,8 @@ public enum OpenSSHRawSettings {
                 }
             case "user":
                 configuration.username = value
+            case "proxycommand":
+                configuration.advanced.proxyCommand = value
             default:
                 break
             }
@@ -66,14 +68,23 @@ public extension SessionConfiguration {
             advanced.proxyType = .jump
             advanced.proxyHost = settings.proxyJump.joined(separator: ",")
         }
+        if advanced.proxyCommand == nil,
+           let proxyCommand = settings.proxyCommand,
+           !proxyCommand.isEmpty
+        {
+            advanced.proxyCommand = proxyCommand
+        }
     }
 
     var requiresTraversioForProxy: Bool {
+        if advanced.proxyCommand != nil {
+            return true
+        }
         switch advanced.proxyType {
         case .none:
-            false
+            return false
         case .http, .socks5, .jump:
-            true
+            return true
         }
     }
 }

@@ -21,7 +21,8 @@ Design and implementation references for the MacSCP project. All documents align
 ## Quick commands
 
 ```bash
-make build test   # compile + 138 XCTest + 3 Swift Testing
+make build test   # compile + 144 XCTest + 3 Swift Testing
+make integration-test   # live SFTP against :2222 (CI)
 make run          # local SFTP fixture + launch app
 make paths        # ~/.macscp paths, profiles, known hosts
 make bench                 # SFTP throughput benchmarks

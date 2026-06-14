@@ -80,19 +80,38 @@ final class SyncCoordinator {
             onStatusMessage?("Preview: \(files.count) file(s) would transfer")
             return
         }
-        guard !files.isEmpty else {
+        let plan = DirectorySyncEngine.mirrorPlan(
+            rows: compareRows,
+            direction: syncDirection,
+            deleteExtraneous: deleteExtraneous
+        )
+        guard !plan.transfers.isEmpty || !plan.remoteDeletes.isEmpty || !plan.localDeletes.isEmpty else {
             onStatusMessage?("Nothing to synchronize")
             return
         }
         switch syncDirection {
         case .mirrorLocalToRemote:
-            transferCoordinator.enqueueSyncUpload(files: files)
+            transferCoordinator.enqueueSyncUpload(files: plan.transfers)
+            if deleteExtraneous, let backend {
+                Task {
+                    for path in plan.remoteDeletes {
+                        try? await backend.removeFile(at: path)
+                    }
+                }
+            }
         case .mirrorRemoteToLocal:
-            transferCoordinator.enqueueSyncDownload(files: files)
+            transferCoordinator.enqueueSyncDownload(files: plan.transfers)
+            if deleteExtraneous {
+                Task {
+                    for url in plan.localDeletes {
+                        try? FileManager.default.removeItem(at: url)
+                    }
+                }
+            }
         case .bidirectional:
             break
         }
         showSyncSheet = false
-        onStatusMessage?("Queued \(files.count) sync job(s)")
+        onStatusMessage?("Queued \(plan.transfers.count) sync job(s)")
     }
 }

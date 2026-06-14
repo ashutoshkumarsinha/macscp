@@ -14,11 +14,12 @@ public final class TraversioSCPBackend: CapableTransferBackend, @unchecked Senda
     public let backendIdentifier = "scp-traversio"
 
     public var capabilities: BackendCapabilities {
-        [.chmod]
+        [.chmod, .chown]
     }
 
     private var connection: SSHConnection?
     private var configuration: SessionConfiguration?
+    private var proxyRelay: ProxyCommandRelay?
     private var pathResolver = SFTPPathResolver()
     private let directoryCache = SFTPDirectoryCache()
 
@@ -31,7 +32,13 @@ public final class TraversioSCPBackend: CapableTransferBackend, @unchecked Senda
             try await disconnect()
         }
 
-        let sshConfig = try await TraversioSSHConfigurationBuilder.makeConfiguration(from: configuration)
+        let endpoint = try SSHConnectRouting.prepare(from: configuration)
+        proxyRelay = endpoint.relay
+        let sshConfig = try await TraversioSSHConfigurationBuilder.makeConfiguration(
+            from: configuration,
+            tcpHost: endpoint.host,
+            tcpPort: endpoint.port
+        )
         let connection = try await SSHClient.connect(configuration: sshConfig)
 
         self.connection = connection
@@ -46,6 +53,8 @@ public final class TraversioSCPBackend: CapableTransferBackend, @unchecked Senda
         }
         self.connection = nil
         self.configuration = nil
+        proxyRelay?.stop()
+        proxyRelay = nil
         self.isConnected = false
     }
 
@@ -140,6 +149,16 @@ public final class TraversioSCPBackend: CapableTransferBackend, @unchecked Senda
         let result = try await connection.execute("chmod \(mode) \(shellQuote(resolved))")
         guard result.exitStatus == 0 else {
             throw BackendError.transferFailed("chmod failed")
+        }
+    }
+
+    public func setOwnership(user: String?, group: String?, at path: String) async throws {
+        let connection = try requireConnection()
+        let resolved = pathResolver.resolve(path)
+        let command = RemoteOwnershipSupport.chownCommand(user: user, group: group, path: resolved)
+        let result = try await connection.execute(command)
+        guard result.exitStatus == 0 else {
+            throw BackendError.transferFailed("chown failed")
         }
     }
 

@@ -16,12 +16,13 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
     public let backendIdentifier = "sftp-citadel"
 
     public var capabilities: BackendCapabilities {
-        [.resumeDownload, .resumeUpload, .chmod, .atomicRename]
+        [.resumeDownload, .resumeUpload, .chmod, .chown, .atomicRename]
     }
 
     private var client: SSHClient?
     private var sftp: SFTPClient?
     private var configuration: SessionConfiguration?
+    private var proxyRelay: ProxyCommandRelay?
     private var pathResolver = SFTPPathResolver()
     private let directoryCache = SFTPDirectoryCache()
     private let listingCache = SFTPListingCache()
@@ -47,10 +48,14 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
             category: .backend
         )
 
+        let endpoint = try SSHConnectRouting.prepare(from: configuration)
+        proxyRelay = endpoint.relay
+
         let sshClient = try await CitadelTCPConnector.connect(
             configuration: configuration,
             authenticationMethod: authMethod,
-            hostKeyValidator: hostKeyValidator
+            hostKeyValidator: hostKeyValidator,
+            endpoint: endpoint
         )
 
         let sftpClient = try await sshClient.openSFTP()
@@ -73,6 +78,8 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
         self.sftp = nil
         self.client = nil
         self.configuration = nil
+        proxyRelay?.stop()
+        proxyRelay = nil
         self.isConnected = false
     }
 
@@ -181,6 +188,30 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
                 return attrs
             }()
         )
+    }
+
+    public func setOwnership(user: String?, group: String?, at path: String) async throws {
+        let sftp = try requireSFTP()
+        let resolved = pathResolver.resolve(path)
+        if let user, RemoteOwnershipSupport.parseUID(user) == nil {
+            throw BackendError.notImplemented("Named owners require numeric uid or SCP backend")
+        }
+        if let group, RemoteOwnershipSupport.parseUID(group) == nil {
+            throw BackendError.notImplemented("Named groups require numeric gid or SCP backend")
+        }
+        guard user != nil || group != nil else {
+            throw BackendError.invalidConfiguration("chown requires user and/or group")
+        }
+
+        let current = try await sftp.getAttributes(at: resolved)
+        var uid = current.uidgid?.userId ?? 0
+        var gid = current.uidgid?.groupId ?? 0
+        if let user, let parsed = RemoteOwnershipSupport.parseUID(user) { uid = parsed }
+        if let group, let parsed = RemoteOwnershipSupport.parseUID(group) { gid = parsed }
+
+        var attrs = SFTPFileAttributes()
+        attrs.uidgid = .init(userId: uid, groupId: gid)
+        try await sftp.setAttributes(at: resolved, to: attrs)
     }
 
     public func upload(

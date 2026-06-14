@@ -64,12 +64,18 @@ public enum OpenSSHConfigParser {
         return home.appendingPathComponent(".ssh/config")
     }
 
-    public static func load(from url: URL) throws -> [OpenSSHHostBlock] {
-        let contents = try String(contentsOf: url, encoding: .utf8)
-        return parse(contents: contents)
+    public static func load(from url: URL, homeDirectory: URL? = nil) throws -> [OpenSSHHostBlock] {
+        let home = homeDirectory ?? FileManager.default.homeDirectoryForCurrentUser
+        var visited = Set<String>()
+        return try loadRecursive(from: url, homeDirectory: home, visited: &visited)
     }
 
+    /// Parses a single config fragment without processing `Include` directives.
     public static func parse(contents: String) -> [OpenSSHHostBlock] {
+        parseFragment(contents: contents)
+    }
+
+    private static func parseFragment(contents: String) -> [OpenSSHHostBlock] {
         var blocks: [OpenSSHHostBlock] = []
         var currentPatterns: [String] = []
         var currentSettings: [String: String] = [:]
@@ -100,6 +106,63 @@ public enum OpenSSHConfigParser {
             let value = parts[1...].joined(separator: " ").trimmingCharacters(in: .whitespaces)
 
             if key == "host" {
+                flushBlock()
+                currentPatterns = value.split(whereSeparator: \.isWhitespace).map(String.init)
+            } else if !currentPatterns.isEmpty {
+                currentSettings[key] = unquote(value)
+            }
+        }
+
+        flushBlock()
+        return blocks
+    }
+
+    private static func loadRecursive(
+        from url: URL,
+        homeDirectory: URL,
+        visited: inout Set<String>
+    ) throws -> [OpenSSHHostBlock] {
+        let normalized = url.standardizedFileURL.path
+        guard !visited.contains(normalized) else { return [] }
+        visited.insert(normalized)
+        guard FileManager.default.fileExists(atPath: normalized) else { return [] }
+
+        let contents = try String(contentsOf: url, encoding: .utf8)
+        var blocks: [OpenSSHHostBlock] = []
+        var currentPatterns: [String] = []
+        var currentSettings: [String: String] = [:]
+
+        func flushBlock() {
+            guard !currentPatterns.isEmpty else { return }
+            blocks.append(OpenSSHHostBlock(patterns: currentPatterns, settings: currentSettings))
+            currentPatterns = []
+            currentSettings = [:]
+        }
+
+        for rawLine in contents.split(whereSeparator: \.isNewline) {
+            var line = String(rawLine).trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix("#") { continue }
+
+            if let commentIndex = line.firstIndex(of: "#") {
+                let before = line[..<commentIndex]
+                if before.contains("\"") == false {
+                    line = String(before).trimmingCharacters(in: .whitespaces)
+                }
+            }
+            if line.isEmpty { continue }
+
+            let parts = splitDirective(line)
+            guard parts.count >= 2 else { continue }
+
+            let key = parts[0].lowercased()
+            let value = parts[1...].joined(separator: " ").trimmingCharacters(in: .whitespaces)
+
+            if key == "include", currentPatterns.isEmpty {
+                let includedURLs = expandIncludePaths(pattern: value, baseURL: url, homeDirectory: homeDirectory)
+                for included in includedURLs {
+                    blocks.append(contentsOf: try loadRecursive(from: included, homeDirectory: homeDirectory, visited: &visited))
+                }
+            } else if key == "host" {
                 flushBlock()
                 currentPatterns = value.split(whereSeparator: \.isWhitespace).map(String.init)
             } else if !currentPatterns.isEmpty {
@@ -317,5 +380,33 @@ public enum OpenSSHConfigParser {
         }
 
         return [OpenSSHJumpEndpoint(host: host, port: port, username: username)]
+    }
+
+    private static func expandIncludePaths(pattern: String, baseURL: URL, homeDirectory: URL) -> [URL] {
+        let trimmed = unquote(pattern.trimmingCharacters(in: .whitespaces))
+        guard !trimmed.isEmpty else { return [] }
+
+        var path = trimmed
+        if path.hasPrefix("~/") {
+            path = homeDirectory.appendingPathComponent(String(path.dropFirst(2))).path
+        } else if path == "~" {
+            path = homeDirectory.path
+        } else if path.hasPrefix("~") {
+            path = homeDirectory.path + String(path.dropFirst())
+        } else if !path.hasPrefix("/") {
+            path = baseURL.deletingLastPathComponent().appendingPathComponent(path).path
+        }
+
+        if path.contains("*") || path.contains("?") {
+            let directory = (path as NSString).deletingLastPathComponent
+            let namePattern = (path as NSString).lastPathComponent
+            let entries = (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
+            return entries
+                .filter { entry in globMatch(namePattern, entry) }
+                .sorted()
+                .map { URL(fileURLWithPath: directory).appendingPathComponent($0) }
+        }
+
+        return [URL(fileURLWithPath: path)]
     }
 }

@@ -196,6 +196,10 @@ public final class FTPTransferBackend: CapableTransferBackend, @unchecked Sendab
         try FTPResponseParser.expect(response, codes: [200, 250])
     }
 
+    public func setOwnership(user: String?, group: String?, at path: String) async throws {
+        throw BackendError.notImplemented("FTP chown")
+    }
+
     public func upload(
         localURL: URL,
         remotePath: String,

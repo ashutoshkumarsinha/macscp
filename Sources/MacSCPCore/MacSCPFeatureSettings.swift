@@ -12,17 +12,20 @@ public struct MacSCPFeatureSettings: Sendable, Equatable {
     public var notifyOnQueueComplete: Bool
     public var iCloudProfileSyncEnabled: Bool
     public var uiLayoutMode: UILayoutMode
+    public var persistTabsEnabled: Bool
 
     public init(
         transferHistoryEnabled: Bool = false,
         notifyOnQueueComplete: Bool = false,
         iCloudProfileSyncEnabled: Bool = false,
-        uiLayoutMode: UILayoutMode = .commander
+        uiLayoutMode: UILayoutMode = .commander,
+        persistTabsEnabled: Bool = true
     ) {
         self.transferHistoryEnabled = transferHistoryEnabled
         self.notifyOnQueueComplete = notifyOnQueueComplete
         self.iCloudProfileSyncEnabled = iCloudProfileSyncEnabled
         self.uiLayoutMode = uiLayoutMode
+        self.persistTabsEnabled = persistTabsEnabled
     }
 }
 

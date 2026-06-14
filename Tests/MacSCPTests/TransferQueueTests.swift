@@ -45,6 +45,7 @@ final class SlowMockTransferBackend: TransferBackend, @unchecked Sendable {
     func removeFile(at path: String) async throws {}
     func rename(from: String, to: String) async throws {}
     func setPermissions(_ permissions: FilePermissions, at path: String) async throws {}
+    func setOwnership(user: String?, group: String?, at path: String) async throws {}
 
     func upload(
         localURL: URL,
@@ -105,6 +106,7 @@ final class CancellationMockTransferBackend: TransferBackend, @unchecked Sendabl
     func removeFile(at path: String) async throws {}
     func rename(from: String, to: String) async throws {}
     func setPermissions(_ permissions: FilePermissions, at path: String) async throws {}
+    func setOwnership(user: String?, group: String?, at path: String) async throws {}
 
     func upload(
         localURL: URL,

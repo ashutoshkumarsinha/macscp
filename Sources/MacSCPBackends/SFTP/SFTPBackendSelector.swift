@@ -15,7 +15,7 @@ public enum SFTPBackendSelector {
         settings: MacSCPTransferSettings,
         advanced: AdvancedSettings = AdvancedSettings()
     ) -> SFTPBackendKind {
-        if authMethod == .agent || advanced.proxyType != .none {
+        if authMethod == .agent || advanced.proxyType != .none || advanced.proxyCommand != nil {
             return .traversio
         }
         if settings.useTraversioForPerformance {
@@ -40,6 +40,8 @@ public enum SFTPBackendSelector {
             )
         case .traversio where advanced.proxyType != .none:
             reason = "proxy (\(advanced.proxyType.rawValue))"
+        case .traversio where advanced.proxyCommand != nil:
+            reason = "ProxyCommand"
         case .traversio:
             reason = "SSH agent auth"
         case .citadel where settings.preset == .appleSilicon:

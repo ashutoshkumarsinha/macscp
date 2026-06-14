@@ -49,6 +49,7 @@ public protocol TransferBackend: AnyObject, Sendable {
     func removeFile(at path: String) async throws
     func rename(from: String, to: String) async throws
     func setPermissions(_ permissions: FilePermissions, at path: String) async throws
+    func setOwnership(user: String?, group: String?, at path: String) async throws
 
     // Core transfer operations used by the transfer queue
     func upload(

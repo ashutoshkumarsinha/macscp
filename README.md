@@ -19,7 +19,7 @@ Sources/
   MacSCPCLI/          macscp-cli scriptable SFTP client (installed as macscp)
   MacSCPBenchmark/    macscp-benchmark CLI (throughput vs OpenSSH)
 Tests/
-  MacSCPTests/        138 XCTest + 3 Swift Testing cases
+  MacSCPTests/        144 XCTest + 3 Swift Testing (+ optional live SFTP integration)
 scripts/
   benchmark-env.sh    Local OpenSSH SFTP server on port 2222
   run-benchmarks.sh   Start server + run benchmarks (--verify optional)
@@ -36,7 +36,8 @@ packaging/homebrew/   Cask (GUI) + Formula (CLI) templates
 
 ```bash
 make build
-make test      # 138 XCTest + 3 Swift Testing
+make test      # 144 XCTest + 3 Swift Testing
+make integration-test   # live SFTP smoke test (starts :2222 fixture)
 make check     # build + test (CI-friendly)
 make ci        # check + bench-apple-silicon + verify pass criteria
 make cli       # build macscp-cli product
@@ -75,8 +76,12 @@ Default sample profile connects to `127.0.0.1:2222` with `.benchmark/keys/client
 make cli
 ./scripts/macscp --help
 ./scripts/macscp open sftp://user@host/path --batch
+./scripts/macscp sync ./local /remote --mirror --delete --preview
+./scripts/macscp --session="My Profile" ls /
 make package-cli   # sudo: install as /usr/local/bin/macscp
 ```
+
+Subcommands: `open`, `close`, `ls`, `get`, `put`, `sync`, `cd`, `lcd`, `pwd`, `lpwd`, `rm`, `mkdir`, `mv`, `chmod`, `call`, `script`, `version`. Run a script with `macscp deploy.macscp`. See [docs/cli-reference.md](docs/cli-reference.md).
 
 The release `.app` bundle also includes `Contents/MacOS/macscp` (see `make package-dmg`).
 

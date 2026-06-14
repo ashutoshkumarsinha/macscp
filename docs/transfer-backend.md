@@ -91,7 +91,7 @@ public struct BackendCapabilities: OptionSet, Sendable {
 | Backend | Capabilities |
 |---|---|
 | Citadel | resume upload/download, chmod, atomic rename |
-| Traversio | chmod, atomic rename |
+| Traversio | resume upload/download, chmod, atomic rename |
 
 ---
 

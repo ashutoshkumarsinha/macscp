@@ -13,7 +13,7 @@ public final class WebDAVTransferBackend: CapableTransferBackend, @unchecked Sen
     public let backendIdentifier = "webdav-native"
 
     public var capabilities: BackendCapabilities {
-        [.resumeUpload, .resumeDownload, .atomicRename]
+        [.resumeUpload, .resumeDownload, .atomicRename, .chmod]
     }
 
     private var baseURL: URL?
@@ -137,7 +137,31 @@ public final class WebDAVTransferBackend: CapableTransferBackend, @unchecked Sen
     }
 
     public func setPermissions(_ permissions: FilePermissions, at path: String) async throws {
-        throw BackendError.notImplemented("WebDAV chmod")
+        let url = try resolveURL(for: path)
+        let mode = String(format: "%04o", permissions.octal)
+        var request = URLRequest(url: url)
+        request.httpMethod = "PROPPATCH"
+        request.setValue("application/xml", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data(
+            """
+            <?xml version="1.0" encoding="utf-8"?>
+            <D:propertyupdate xmlns:D="DAV:">
+              <D:set>
+                <D:prop>
+                  <unixmode xmlns="http://apache.org/dav/props/">\(mode)</unixmode>
+                </D:prop>
+              </D:set>
+            </D:propertyupdate>
+            """.utf8
+        )
+        let (_, response) = try await perform(request)
+        guard (200 ... 299).contains(response.statusCode) else {
+            throw BackendError.transferFailed("PROPPATCH chmod failed (\(response.statusCode))")
+        }
+    }
+
+    public func setOwnership(user: String?, group: String?, at path: String) async throws {
+        throw BackendError.notImplemented("WebDAV chown")
     }
 
     public func upload(

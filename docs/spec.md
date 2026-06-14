@@ -71,8 +71,8 @@ MacSCP fills the gap left by WinSCP being Windows-only. macOS users currently ch
 | Cold launch to connected dual-pane | < 3 s (cached session) | Not measured |
 | Crash-free sessions | > 99.5% | Not measured |
 | Keychain credential retrieval | < 100 ms | Not measured |
-| CLI script compatibility | Documented subset of WinSCP scripting verbs | **Shipped:** `macscp-cli` (open, ls, get, put, sync, script); full WinSCP parity partial |
-| Unit test coverage (core/backends) | All critical transfer paths covered | **138** XCTest cases + **3** Swift Testing cases (`make check`) |
+| CLI script compatibility | Documented subset of WinSCP scripting verbs | **Shipped:** full verb set (open/close/ls/get/put/sync/cd/lcd/pwd/rm/mkdir/mv/chmod/call/script); see [cli-reference.md](cli-reference.md) |
+| Unit test coverage (core/backends) | All critical transfer paths covered | **144** XCTest cases + **3** Swift Testing cases (`make check`) |
 
 ---
 
@@ -281,7 +281,7 @@ macscp script deploy.macscp
 | Requirement | Detail |
 |---|---|
 | Exit codes | 0 success; 1 usage; 2 connection; 3 transfer; 4 auth; 10 partial |
-| Output formats | human (default), `--json` for automation |
+| Output formats | human (default), `--json` for automation (`ls`/`stat`/`version` objects; `get`/`put`/`sync` NDJSON events) |
 | Config isolation | `--ini /dev/null` equivalent: no GUI prefs side effects |
 | Host key automation | `--hostkey=fingerprint` for CI (explicit opt-in) |
 
@@ -420,7 +420,7 @@ Future backends (FTP, WebDAV, S3) implement the same `TransferBackend` surface w
 | `MacSCPUI` | Background transfer queue, job state machine, overwrite batch types (shared by app and tests) |
 | `MacSCPApp` | SwiftUI executable, coordinator decomposition, session profiles, dual-pane commander |
 | `MacSCPBenchmark` | `macscp-benchmark` CLI — throughput comparison vs OpenSSH (`make bench-apple-silicon`) |
-| `MacSCPTests` | Unit and integration tests against local OpenSSH fixture (port 2222); **138** XCTest + **3** Swift Testing cases |
+| `MacSCPTests` | Unit and integration tests against local OpenSSH fixture (port 2222); **144** XCTest + **3** Swift Testing cases |
 
 Shipped: `macscp-cli` Swift product (installed as `macscp`; see [cli-reference.md](cli-reference.md)).
 
@@ -516,7 +516,7 @@ Run: `make test` or `swift test`.
 - [x] External remote editor (download → edit → re-upload)
 - [x] Internal remote editor
 - [x] Directory compare + one-way and bidirectional sync
-- [x] `macscp` CLI: open, get, put, ls, sync, script (product `macscp-cli`)
+- [x] `macscp` CLI: open, close, ls, get, put, sync, cd/lcd/pwd, rm/mkdir/mv/chmod, call, script, version (product `macscp-cli`)
 
 ### Phase 2 — Parity+ (8–12 weeks)
 

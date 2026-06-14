@@ -27,6 +27,25 @@ final class DirectorySyncEngineTests: XCTestCase {
         let download = DirectorySyncEngine.rowsNeedingDownload(rows)
         XCTAssertEqual(download.map(\.relativePath), ["a.txt"])
     }
+
+    func testSyncFileMaskExcludesPatterns() {
+        let mask = SyncFileMask.parse("*.txt|*.bak")
+        XCTAssertTrue(mask.matches(relativePath: "notes.txt"))
+        XCTAssertFalse(mask.matches(relativePath: "notes.bak"))
+    }
+
+    func testMirrorPlanDeletesExtraneousRemoteFiles() {
+        let rows = [
+            SyncCompareRow(relativePath: "keep.txt", status: .same, remotePath: "/remote/keep.txt"),
+            SyncCompareRow(relativePath: "extra.txt", status: .newRemote, remotePath: "/remote/extra.txt"),
+        ]
+        let plan = DirectorySyncEngine.mirrorPlan(
+            rows: rows,
+            direction: .mirrorLocalToRemote,
+            deleteExtraneous: true
+        )
+        XCTAssertEqual(plan.remoteDeletes, ["/remote/extra.txt"])
+    }
 }
 
 final class HostKeyTrustGateTests: XCTestCase {

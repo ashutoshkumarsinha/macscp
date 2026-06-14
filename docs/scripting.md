@@ -46,13 +46,16 @@ macscp --ini none --batch deploy.macscp   # isolated, CI-safe
 
 ## Commands
 
-All [CLI commands](cli-reference.md#commands) are available in scripts except global-only flags (`--json`, `--logfile`). Use `option` for script-local settings.
+Script verbs match the [CLI command set](cli-reference.md#commands). Global-only flags (`--json`, `--logfile`, `--timeout`) belong on the `macscp` invocation line, not inside the script.
 
 ### Session lifecycle
 
 ```text
 open sftp://user@host:22/path
-open sftp://user@host -session="Profile Name"
+open sftp://user@host -session=ProfileName
+open sftp://user@host -privatekey=~/.ssh/id_ed25519 -passphrase=***
+open sftp://user@host -agent -batch -hostkey=SHA256:...
+open sftp://user@host -rawsettings=ProxyJump=bastion
 close
 exit
 ```
@@ -70,32 +73,42 @@ lpwd
 
 ```text
 get /remote/file.txt ./local/
-get /remote/*.sql ./backups/
 put ./build/app.zip /remote/releases/
-rm /remote/old/*
+rm /remote/old.txt
 mkdir /remote/new
+mkdir -p /remote/a/b/c
 mv /remote/a.txt /remote/b.txt
 chmod 644 /remote/config.yml
+call stat /remote/config.yml
 ```
+
+Use `option transfer binary` (or `ascii`) before `get`/`put` for transfer mode. Resume: add `-resume` on script `get`/`put` lines (not yet a global script default).
 
 ### Synchronization
 
 ```text
-# Mirror local → remote, delete extras on remote
 sync ./public/ /var/www/html/ -mirror -delete
-
-# Preview only
-sync ./public/ /var/www/html/ -mirror -preview
+sync ./public/ /var/www/html/ -mirror-remote -preview
+sync ./public/ /var/www/html/ -bidirectional
+sync ./public/ /var/www/ -filemask="*.html; *.css|*.tmp" -criteria=time
 ```
+
+Script flags use WinSCP-style `-flag` tokens on the `sync` line (`-mirror`, `-delete`, `-preview`, `-bidirectional`, `-filemask=…`, `-criteria=…`).
 
 ### Options
 
 ```text
 option batch on
 option confirm off
+option continue on
+option failonnomatch on
 option transfer binary
-option reconnecttime 120
 ```
+
+| Option | Status |
+|---|---|
+| `batch`, `confirm`, `continue`, `failonnomatch`, `transfer` | Supported |
+| `reconnecttime`, `connectiontimeout` | **Not implemented** — use `macscp --timeout` on the command line |
 
 ---
 
@@ -115,7 +128,9 @@ open ftps://user@host -explicit -passive=on
 | `-privatekey=<path>` | SSH private key |
 | `-passphrase=<value>` | Key passphrase (avoid in committed scripts) |
 | `-hostkey=<fp>` | Expected host key fingerprint |
-| `-rawsettings=<k=v>` | Backend-specific settings |
+| `-agent` | SSH agent |
+| `-batch` | Strict host keys |
+| `-rawsettings=<k=v>` | ProxyJump, HostName, Port, User |
 
 ---
 
@@ -136,22 +151,23 @@ open ftps://user@host -explicit -passive=on
 | `synchronize local remote` | `sync local remote -mirror` |
 | `keepuptodate` | GUI **Live Sync** (FSEvents); no CLI `watch` yet |
 
-### Commands not supported (v1)
+### Commands not supported (v0.3)
 
 | WinSCP | MacSCP alternative |
 |---|---|
-| `call ls` | Use `ls` |
-| `.NET assembly` | Import `MacSCPCore` Swift package as a library |
-| `ProxyJump` / `-rawsettings` | `open ... --rawsettings ProxyJump=bastion` or `~/.ssh/config` merge |
-| `open ftpes://` | Use `ftps://` with `-explicit` |
-| `open s3://` | `open s3://ACCESS:SECRET@/bucket/prefix` or saved S3 profile |
+| `call chown` | SSH/SCP backends; numeric uid/gid on Citadel SFTP |
+| `call ln -sf …` | Use `mv` or shell out manually |
+| Remote globs on `get` | Loop in shell |
+| `option reconnecttime` | Not implemented |
+| `ProxyCommand` in ssh config | Merged from config; or `-rawsettings=proxycommand=…` |
+| `keepuptodate` | GUI **Live Sync**; no CLI `watch` yet |
 
 ### Migration checklist
 
 1. Replace Windows paths (`C:\...`) with POSIX paths.
 2. Replace `winscp.com /ini=nul` with `macscp --ini none`.
 3. Verify `-hostkey` fingerprint format (MacSCP accepts SHA256 or MD5).
-4. Remove WinSCP-only options (``-timeout` semantics differ — use `option connectiontimeout`).
+4. Remove WinSCP-only options (`reconnecttime` — use `macscp --timeout`).
 5. Test with `-preview` on `sync` before `-delete`.
 
 ---
@@ -255,4 +271,4 @@ When a session is already connected in the GUI, upload/download use the active b
 
 ---
 
-*End of scripting guide v0.1*
+*End of scripting guide v0.3*

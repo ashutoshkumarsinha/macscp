@@ -70,6 +70,10 @@ public final class SerializingTransferBackend: CapableTransferBackend, @unchecke
         try await gate.setPermissions(permissions, at: path)
     }
 
+    public func setOwnership(user: String?, group: String?, at path: String) async throws {
+        try await gate.setOwnership(user: user, group: group, at: path)
+    }
+
     public func upload(
         localURL: URL,
         remotePath: String,
@@ -143,6 +147,10 @@ private actor TransferBackendGate {
 
     func setPermissions(_ permissions: FilePermissions, at path: String) async throws {
         try await backend.setPermissions(permissions, at: path)
+    }
+
+    func setOwnership(user: String?, group: String?, at path: String) async throws {
+        try await backend.setOwnership(user: user, group: group, at: path)
     }
 
     func upload(

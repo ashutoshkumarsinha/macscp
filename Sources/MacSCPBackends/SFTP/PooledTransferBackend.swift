@@ -141,6 +141,11 @@ public final class PooledTransferBackend: CapableTransferBackend, @unchecked Sen
         try await primary.setPermissions(permissions, at: path)
     }
 
+    public func setOwnership(user: String?, group: String?, at path: String) async throws {
+        guard let primary else { throw BackendError.notConnected }
+        try await primary.setOwnership(user: user, group: group, at: path)
+    }
+
     public func upload(
         localURL: URL,
         remotePath: String,

@@ -47,6 +47,8 @@ public struct AdvancedSettings: Codable, Sendable, Equatable {
     public var proxyType: ProxyType
     public var proxyHost: String?
     public var proxyPort: Int?
+    /// OpenSSH `ProxyCommand` template (expanded with %h/%p/%r/%n at connect time).
+    public var proxyCommand: String?
 
     public init(
         compression: Bool = false,
@@ -58,7 +60,8 @@ public struct AdvancedSettings: Codable, Sendable, Equatable {
         cloudBucket: String? = nil,
         proxyType: ProxyType = .none,
         proxyHost: String? = nil,
-        proxyPort: Int? = nil
+        proxyPort: Int? = nil,
+        proxyCommand: String? = nil
     ) {
         self.compression = compression
         self.connectionTimeoutSeconds = connectionTimeoutSeconds
@@ -70,6 +73,7 @@ public struct AdvancedSettings: Codable, Sendable, Equatable {
         self.proxyType = proxyType
         self.proxyHost = proxyHost
         self.proxyPort = proxyPort
+        self.proxyCommand = proxyCommand
     }
 }
 

@@ -17,12 +17,13 @@ enum CitadelTCPConnector {
     static func connect(
         configuration: SessionConfiguration,
         authenticationMethod: SSHAuthenticationMethod,
-        hostKeyValidator: SSHHostKeyValidator
+        hostKeyValidator: SSHHostKeyValidator,
+        endpoint: SSHConnectRouting.Endpoint
     ) async throws -> SSHClient {
         // Step 1: Standard Citadel SSH handshake (same as before performance work).
         let client = try await SSHClient.connect(
-            host: configuration.host,
-            port: configuration.port,
+            host: endpoint.host,
+            port: endpoint.port,
             authenticationMethod: authenticationMethod,
             hostKeyValidator: hostKeyValidator,
             reconnect: .never,

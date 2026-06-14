@@ -11,7 +11,11 @@ import Traversio
 
 enum TraversioSSHConfigurationBuilder {
     /// Maps MacSCP session settings to Traversio's SSHClientConfiguration, including ProxyJump hops.
-    static func makeConfiguration(from configuration: SessionConfiguration) async throws -> SSHClientConfiguration {
+    static func makeConfiguration(
+        from configuration: SessionConfiguration,
+        tcpHost: String? = nil,
+        tcpPort: Int? = nil
+    ) async throws -> SSHClientConfiguration {
         let auth = try await makeAuthentication(from: configuration)
         let hostKeyPolicy = makeHostKeyPolicy(
             host: configuration.host,
@@ -25,8 +29,8 @@ enum TraversioSSHConfigurationBuilder {
         )
 
         return SSHClientConfiguration(
-            host: configuration.host,
-            port: UInt16(clamping: configuration.port),
+            host: tcpHost ?? configuration.host,
+            port: UInt16(clamping: tcpPort ?? configuration.port),
             username: configuration.username,
             authentication: auth,
             hostKeyPolicy: hostKeyPolicy,
