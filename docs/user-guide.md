@@ -571,9 +571,8 @@ Connection form **Advanced → Proxy**: HTTP CONNECT, SOCKS5, or SSH jump host. 
 
 The following remain **planned** or require distribution signing:
 
-- **Mac App Store** build with full sandbox + notarized release pipeline
-- **CLI:** FTP/FTPS mode flags on `open`, `option reconnecttime`
-- **Full WinSCP script parity** (remote globs, symlinks via `call`, tunnel UI)
+- **Mac App Store** build with full sandbox product
+- **Full WinSCP script parity** (symbolic chmod, `option reconnecttime`, symlinks via `call`)
 
 ---
 

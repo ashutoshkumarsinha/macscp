@@ -35,8 +35,7 @@ enum CLIProfileResolver {
     }
 
     static func resolve(nameOrID: String, homeDirectory: URL) throws -> SessionConfiguration {
-        let profilesURL = homeDirectory
-            .appendingPathComponent("Library/Application Support/MacSCP/profiles.json")
+        let profilesURL = MacSCPPaths.profilesURL(homeDirectory: homeDirectory)
         guard FileManager.default.fileExists(atPath: profilesURL.path) else {
             throw CLIError.usage("No saved profiles found")
         }

@@ -148,6 +148,10 @@ persist_tabs = true
             try contents.write(to: configURL, atomically: true, encoding: .utf8)
         }
 
+        return try loadSettings(at: configURL)
+    }
+
+    public static func loadSettings(at configURL: URL) throws -> MacSCPAppSettings {
         let contents = try String(contentsOf: configURL, encoding: .utf8)
         let settings = parseSettings(from: contents)
         if settings.transfer.useTraversioForPerformance {

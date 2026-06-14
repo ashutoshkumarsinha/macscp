@@ -82,6 +82,80 @@ public final class MacSCPLogger: @unchecked Sendable {
         fileWriteWarningLogged = false
     }
 
+    /// Loads ~/.macscp/config.toml when present; otherwise returns defaults without creating a file.
+    public func bootstrapCLI(
+        homeDirectory: URL? = nil,
+        minimumLevel: MacSCPLogLevel? = nil
+    ) -> URL? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let home = homeDirectory ?? FileManager.default.homeDirectoryForCurrentUser
+        let settings: MacSCPLoggingSettings
+        if FileManager.default.fileExists(atPath: MacSCPConfiguration.configURL(homeDirectory: home).path),
+           let loaded = try? MacSCPConfiguration.loadLoggingSettings(homeDirectory: home)
+        {
+            settings = loaded
+        } else {
+            settings = MacSCPLoggingSettings()
+        }
+
+        applySettingsUnlocked(settings)
+        if let minimumLevel {
+            self.minimumLevel = minimumLevel
+        }
+        isEnabled = true
+
+        guard isEnabled else { return nil }
+
+        let directory = MacSCPConfiguration.macscpDirectory(homeDirectory: home)
+            .appendingPathComponent("logs", isDirectory: true)
+
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            fputs("MacSCP: failed to create log directory: \(error)\n", stderr)
+            return nil
+        }
+
+        logDirectory = directory
+        pruneOldLogs(in: directory, keepingDays: retentionDays)
+        openLogFile(for: Date(), in: directory)
+        writeUnlocked(level: .info, category: .app, message: "CLI logging initialized at \(directory.path)")
+        return directory
+    }
+
+    /// Append all log lines to a single file (used by macscp --logfile).
+    public func bootstrapDedicatedLogFile(
+        at url: URL,
+        minimumLevel: MacSCPLogLevel = .info,
+        mirrorStderr: Bool = true
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        isEnabled = true
+        self.minimumLevel = minimumLevel
+        self.mirrorStderr = mirrorStderr
+        logDirectory = url.deletingLastPathComponent()
+        currentLogDay = nil
+
+        if let fileHandle {
+            try? fileHandle.close()
+            self.fileHandle = nil
+        }
+
+        let directory = url.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
+        guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        try? handle.seekToEnd()
+        fileHandle = handle
+        writeUnlocked(level: .info, category: .app, message: "CLI logging to \(url.path)")
+    }
+
     /// Loads ~/.macscp/config.toml, creates ~/.macscp/logs if logging is enabled.
     @discardableResult
     public func bootstrap(homeDirectory: URL? = nil) -> URL? {

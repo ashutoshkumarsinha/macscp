@@ -13,6 +13,7 @@ enum CLIRuntime {
     nonisolated(unsafe) static var quiet = false
     nonisolated(unsafe) static var jsonOutput = false
     nonisolated(unsafe) static var skipIni = false
+    nonisolated(unsafe) static var configURL: URL?
     nonisolated(unsafe) static var connectionTimeout: Int?
     nonisolated(unsafe) static var hostKeyFingerprints: [String] = []
     nonisolated(unsafe) static var logLevel: MacSCPLogLevel?
@@ -25,6 +26,7 @@ enum CLIRuntime {
         quiet = false
         jsonOutput = false
         skipIni = false
+        configURL = nil
         connectionTimeout = nil
         hostKeyFingerprints = []
         logLevel = nil
@@ -45,11 +47,20 @@ enum CLIRuntime {
         if batch { batchMode = true }
         if quietFlag { quiet = true }
         if json { jsonOutput = true }
-        if ini?.lowercased() == "none" { skipIni = true }
+        if ini?.lowercased() == "none" {
+            skipIni = true
+        } else if let ini, !ini.isEmpty {
+            configURL = URL(fileURLWithPath: NSString(string: ini).expandingTildeInPath)
+        }
         if let timeout { connectionTimeout = timeout }
         if !hostkeys.isEmpty { hostKeyFingerprints = hostkeys }
-        if let loglevel, let level = MacSCPLogLevel(rawValue: loglevel.lowercased()) {
-            logLevel = level
+        if let loglevel {
+            let normalized = loglevel.uppercased()
+            if normalized == "WARN" {
+                logLevel = .warning
+            } else if let level = MacSCPLogLevel(rawValue: normalized) {
+                logLevel = level
+            }
         }
         if let logfile {
             logFile = URL(fileURLWithPath: NSString(string: logfile).expandingTildeInPath)
@@ -105,6 +116,29 @@ enum CLIRuntime {
             progress: progress
         )
         return (options, transferID)
+    }
+
+    static func bootstrapLogging() {
+        if let logFile {
+            MacSCPLogger.shared.bootstrapDedicatedLogFile(
+                at: logFile,
+                minimumLevel: logLevel ?? .info,
+                mirrorStderr: !quiet
+            )
+            return
+        }
+        if skipIni {
+            if let logLevel {
+                MacSCPLogger.shared.bootstrapDedicatedLogFile(
+                    at: FileManager.default.temporaryDirectory
+                        .appendingPathComponent("macscp-cli.log"),
+                    minimumLevel: logLevel,
+                    mirrorStderr: !quiet
+                )
+            }
+            return
+        }
+        _ = MacSCPLogger.shared.bootstrapCLI(minimumLevel: logLevel)
     }
 
     static func applyAdvanced(to session: inout SessionConfiguration) {

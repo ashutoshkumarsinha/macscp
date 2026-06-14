@@ -113,8 +113,32 @@ MACSCP_SHORT_VERSION=0.2.0 MACSCP_BUILD_VERSION=42 make package-dmg
 |---|---|
 | `iconutil: Invalid Iconset` | Re-run `make icon`; ensure no extra files in `build/AppIcon.iconset/` |
 | App has generic icon | Confirm `AppIcon.icns` exists in `Contents/Resources/` and `CFBundleIconFile` is `AppIcon` |
-| Gatekeeper blocks app | Sign with Developer ID + notarize (not yet automated) |
+| Gatekeeper blocks app | Sign with Developer ID, then `make notarize` or `./scripts/notarize-dmg.sh dist/MacSCP-*.dmg` |
 | Missing NOTICE in app | Re-run `make package-dmg`; `NOTICE` is copied to `Contents/Resources/` |
+
+---
+
+## Notarization
+
+After a signed release build:
+
+```bash
+export MACSCP_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+export MACSCP_APPLE_ID="you@example.com"
+export MACSCP_APPLE_TEAM_ID="TEAMID"
+export MACSCP_APPLE_PASSWORD="app-specific-password"
+
+make package-dmg
+./scripts/notarize-dmg.sh dist/MacSCP-0.3.0.dmg
+```
+
+Or set `MACSCP_NOTARIZE=1` when packaging (requires the same Apple credential env vars).
+
+For Homebrew releases after uploading the DMG to GitHub:
+
+```bash
+make homebrew-release VERSION=0.3.0
+```
 
 ---
 

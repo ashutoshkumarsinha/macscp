@@ -23,7 +23,7 @@ LOG_DIR     := $(HOME)/.macscp/logs
 .PHONY: help build build-release test check integration-test ci clean run cli \
         server-start server-stop server-restart server-status \
         bench bench-full bench-upload-spike bench-apple-silicon bench-profile bench-verify \
-        build-release package-dmg package-cli icon \
+        build-release package-dmg package-cli icon notarize homebrew-release \
         logs config paths
 
 .DEFAULT_GOAL := help
@@ -131,4 +131,12 @@ paths: ## Print runtime paths (config, logs, profiles, known hosts)
 	@echo "Profiles:   $(HOME)/Library/Application Support/MacSCP/profiles.json"
 	@echo "Known hosts: $(HOME)/.macscp/known_hosts.json"
 	@echo "Benchmark:  $(ROOT).benchmark/ (local SFTP fixture on :2222)"
-	@echo "Scripts:    $(SCRIPTS)/benchmark-env.sh run-benchmarks.sh verify-benchmark-report.sh ci-local.sh"
+	@echo "Scripts:    $(SCRIPTS)/benchmark-env.sh run-benchmarks.sh verify-benchmark-report.sh ci-local.sh notarize-dmg.sh prepare-homebrew-release.sh"
+
+notarize: package-dmg ## Notarize dist/MacSCP-*.dmg (requires Apple credentials)
+	chmod +x $(SCRIPTS)/notarize-dmg.sh
+	MACSCP_NOTARIZE=1 $(SCRIPTS)/package-dmg.sh
+
+homebrew-release: ## Update cask sha256/url for VERSION (default 0.3.0)
+	chmod +x $(SCRIPTS)/prepare-homebrew-release.sh
+	$(SCRIPTS)/prepare-homebrew-release.sh $(or $(VERSION),0.3.0)

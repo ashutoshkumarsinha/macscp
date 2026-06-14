@@ -13,7 +13,7 @@ public final class WebDAVTransferBackend: CapableTransferBackend, @unchecked Sen
     public let backendIdentifier = "webdav-native"
 
     public var capabilities: BackendCapabilities {
-        [.resumeUpload, .resumeDownload, .atomicRename, .chmod]
+        [.atomicRename, .chmod]
     }
 
     private var baseURL: URL?
@@ -172,23 +172,8 @@ public final class WebDAVTransferBackend: CapableTransferBackend, @unchecked Sen
         let url = try resolveURL(for: remotePath)
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
-        request.httpBody = try Data(contentsOf: localURL)
-        let (_, response) = try await perform(request)
-        guard (200 ... 299).contains(response.statusCode) else {
-            throw BackendError.transferFailed("PUT failed (\(response.statusCode))")
-        }
-        let size = Int64(request.httpBody?.count ?? 0)
-        options.progress?(
-            TransferProgress(
-                transferID: UUID(),
-                direction: .upload,
-                path: remotePath,
-                totalBytes: size,
-                transferredBytes: size,
-                bytesPerSecond: nil
-            )
-        )
-        return TransferResult(bytesTransferred: size, checksum: nil)
+        let bytes = try await HTTPClient.upload(from: localURL, request: request, options: options, remotePath: remotePath)
+        return TransferResult(bytesTransferred: bytes, checksum: nil)
     }
 
     public func download(
@@ -199,25 +184,8 @@ public final class WebDAVTransferBackend: CapableTransferBackend, @unchecked Sen
         let url = try resolveURL(for: remotePath)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        let (data, response) = try await perform(request)
-        guard (200 ... 299).contains(response.statusCode) else {
-            throw BackendError.transferFailed("GET failed (\(response.statusCode))")
-        }
-        let parent = localURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
-        try data.write(to: localURL, options: .atomic)
-        let size = Int64(data.count)
-        options.progress?(
-            TransferProgress(
-                transferID: UUID(),
-                direction: .download,
-                path: remotePath,
-                totalBytes: size,
-                transferredBytes: size,
-                bytesPerSecond: nil
-            )
-        )
-        return TransferResult(bytesTransferred: size, checksum: nil)
+        let bytes = try await HTTPClient.download(to: localURL, request: request, options: options, remotePath: remotePath)
+        return TransferResult(bytesTransferred: bytes, checksum: nil)
     }
 
     private func mkcol(at path: String) async throws {

@@ -63,7 +63,12 @@ struct CommanderView: View {
                 paneSide: prompt.paneSide,
                 entryName: prompt.entryName,
                 permissionsOctal: prompt.permissionsOctal,
-                onSave: { value in Task { await appModel.saveProperties(octal: value) } },
+                supportsChown: prompt.supportsChown,
+                ownerUser: prompt.ownerUser,
+                ownerGroup: prompt.ownerGroup,
+                onSave: { octal, user, group in
+                    Task { await appModel.saveProperties(octal: octal, ownerUser: user, ownerGroup: group) }
+                },
                 onCancel: { appModel.propertiesPrompt = nil }
             )
         }

@@ -23,9 +23,17 @@ actor CLISessionStore {
             settingsLoaded = true
             return
         }
-        transferSettings = try MacSCPConfiguration.loadSettings(
-            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
-        ).transfer
+        guard !CLIRuntime.skipIni else {
+            settingsLoaded = true
+            return
+        }
+        if let configURL = CLIRuntime.configURL {
+            transferSettings = try MacSCPConfiguration.loadSettings(at: configURL).transfer
+        } else {
+            transferSettings = try MacSCPConfiguration.loadSettings(
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+            ).transfer
+        }
         settingsLoaded = true
     }
 

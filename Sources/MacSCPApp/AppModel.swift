@@ -177,6 +177,9 @@ final class AppModel: TransferBackendProvider {
         var paneSide: FilePaneSide
         var entryName: String
         var permissionsOctal: String
+        var supportsChown: Bool
+        var ownerUser: String
+        var ownerGroup: String
     }
 
     struct InternalEditorState: Identifiable {
@@ -727,28 +730,65 @@ final class AppModel: TransferBackendProvider {
            let entry = remotePane.remoteEntries.first(where: { $0.name == entryName }),
            let perm = entry.permissions {
             octal = String(format: "%o", perm.octal)
+        } else if pane == .local {
+            let url = localPath.appendingPathComponent(entryName)
+            let mode = (try? FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)?
+                .uint32Value ?? 0o644
+            octal = String(format: "%o", mode)
         } else {
             octal = "644"
         }
         propertiesPrompt = PropertiesPromptState(
             paneSide: pane,
             entryName: entryName,
-            permissionsOctal: octal
+            permissionsOctal: octal,
+            supportsChown: pane == .remote && remoteSupportsChown(),
+            ownerUser: "",
+            ownerGroup: ""
         )
     }
 
-    func saveProperties(octal: String) async {
+    func remoteSupportsChown() -> Bool {
+        guard let backend = sessionCoordinator.backend as? CapableTransferBackend else { return false }
+        return backend.capabilities.contains(.chown)
+    }
+
+    func saveProperties(octal: String, ownerUser: String, ownerGroup: String) async {
         guard let prompt = propertiesPrompt else { return }
         propertiesPrompt = nil
-        guard prompt.paneSide == .remote,
-              let value = UInt32(octal, radix: 8) else { return }
-        if await fileOps.setRemotePermissions(
-            FilePermissions(octal: value),
-            name: prompt.entryName,
-            backend: sessionCoordinator.backend,
-            remotePath: remotePath
-        ) {
-            await refreshRemote()
+        guard let value = UInt32(octal, radix: 8) else { return }
+
+        switch prompt.paneSide {
+        case .local:
+            if fileOps.setLocalPermissions(
+                FilePermissions(octal: value),
+                name: prompt.entryName,
+                localPath: localPath
+            ) {
+                await refreshLocal()
+            }
+        case .remote:
+            if await fileOps.setRemotePermissions(
+                FilePermissions(octal: value),
+                name: prompt.entryName,
+                backend: sessionCoordinator.backend,
+                remotePath: remotePath
+            ) {
+                await refreshRemote()
+            }
+            let user = ownerUser.trimmingCharacters(in: .whitespacesAndNewlines)
+            let group = ownerGroup.trimmingCharacters(in: .whitespacesAndNewlines)
+            if prompt.supportsChown, !user.isEmpty || !group.isEmpty {
+                if await fileOps.setRemoteOwnership(
+                    user: user.isEmpty ? nil : user,
+                    group: group.isEmpty ? nil : group,
+                    name: prompt.entryName,
+                    backend: sessionCoordinator.backend,
+                    remotePath: remotePath
+                ) {
+                    await refreshRemote()
+                }
+            }
         }
     }
 

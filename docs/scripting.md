@@ -157,7 +157,7 @@ open ftps://user@host -explicit -passive=on
 |---|---|
 | `call chown` | SSH/SCP backends; numeric uid/gid on Citadel SFTP |
 | `call ln -sf …` | Use `mv` or shell out manually |
-| Remote globs on `get` | Loop in shell |
+| `get remote local` | `get remote [remote...] local` (multiple remotes → local directory) |
 | `option reconnecttime` | Not implemented |
 | `ProxyCommand` in ssh config | Merged from config; or `-rawsettings=proxycommand=…` |
 | `keepuptodate` | GUI **Live Sync**; no CLI `watch` yet |

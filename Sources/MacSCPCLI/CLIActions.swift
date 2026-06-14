@@ -19,7 +19,9 @@ enum CLIActions {
         agent: Bool = false,
         hostkey: String? = nil,
         batch: Bool = false,
-        rawSettings: [String] = []
+        rawSettings: [String] = [],
+        ftpPassive: Bool? = nil,
+        ftpsImplicit: Bool? = nil
     ) async throws {
         if batch || CLIRuntime.batchMode {
             await HostKeyTrustGate.shared.setMode(.batchStrict)
@@ -41,7 +43,7 @@ enum CLIActions {
             do {
                 parsed = try ConnectionURL.parse(url)
             } catch {
-                throw CLIError.usage("Expected sftp://, scp://, ftp://, or ftps:// URL")
+                throw CLIError.usage("Expected sftp://, scp://, ftp://, ftps://, webdav://, s3://, or gcs:// URL")
             }
             var auth = parsed.authMethod
             if agent { auth = .agent }
@@ -62,6 +64,12 @@ enum CLIActions {
         }
         OpenSSHRawSettings.apply(rawSettings, to: &config)
         config.mergeOpenSSHConfig()
+        if let ftpPassive {
+            config.advanced.ftpPassive = ftpPassive
+        }
+        if let ftpsImplicit {
+            config.advanced.ftpsImplicit = ftpsImplicit
+        }
         do {
             try await CLISessionStore.shared.connect(config)
             CLIJSONEventStream.emitSessionConnected(config)
@@ -129,7 +137,7 @@ enum CLIActions {
     }
 
     static func get(
-        remote: String,
+        remotes: [String],
         local: String,
         resume: Bool = false,
         overwrite: OverwritePolicy = .overwrite,
@@ -138,25 +146,56 @@ enum CLIActions {
     ) async throws {
         let backend = try await CLISessionStore.shared.backendOrThrow()
         let settings = await CLISessionStore.shared.transferSettingsOrDefault()
-        let resolvedRemote = await CLISessionStore.shared.resolveRemotePath(remote)
-        let localURL = URL(fileURLWithPath: NSString(string: local).expandingTildeInPath, isDirectory: false)
+        let expanded = try await expandRemotePatterns(remotes, backend: backend)
+        guard !expanded.isEmpty else {
+            throw CLIError.usage("No remote files matched")
+        }
+
+        let localPath = NSString(string: local).expandingTildeInPath
+        let baseOptions = CLIRuntime.makeTransferOptions(
+            resume: resume,
+            overwrite: overwrite,
+            transferMode: transferMode,
+            checksum: checksum,
+            verifyChecksum: checksum != nil,
+            settings: settings
+        )
+
+        if expanded.count > 1 {
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: localPath, isDirectory: &isDirectory),
+                  isDirectory.boolValue
+            else {
+                throw CLIError.usage("Local destination must be an existing directory for multiple downloads")
+            }
+            let localRoot = URL(fileURLWithPath: localPath, isDirectory: true)
+            for remotePath in expanded {
+                let name = (remotePath as NSString).lastPathComponent
+                let localURL = localRoot.appendingPathComponent(name)
+                try await downloadFile(
+                    backend: backend,
+                    remotePath: remotePath,
+                    localURL: localURL,
+                    settings: settings,
+                    baseOptions: baseOptions
+                )
+                CLIRuntime.printMessage("Downloaded \(remotePath) → \(localURL.path)")
+            }
+            return
+        }
+
+        let remotePath = expanded[0]
+        let localURL = URL(fileURLWithPath: localPath, isDirectory: false)
         let parent = localURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
         try await downloadFile(
             backend: backend,
-            remotePath: resolvedRemote,
+            remotePath: remotePath,
             localURL: localURL,
             settings: settings,
-            baseOptions: CLIRuntime.makeTransferOptions(
-                resume: resume,
-                overwrite: overwrite,
-                transferMode: transferMode,
-                checksum: checksum,
-                verifyChecksum: checksum != nil,
-                settings: settings
-            )
+            baseOptions: baseOptions
         )
-        CLIRuntime.printMessage("Downloaded \(resolvedRemote) → \(localURL.path)")
+        CLIRuntime.printMessage("Downloaded \(remotePath) → \(localURL.path)")
     }
 
     static func put(
@@ -541,6 +580,34 @@ enum CLIActions {
         let text = try String(contentsOf: URL(fileURLWithPath: path), encoding: .utf8)
         try await MacSCPScriptRunner.run(text)
     }
+
+    private static func expandRemotePatterns(_ patterns: [String], backend: TransferBackend) async throws -> [String] {
+        var results: [String] = []
+        for pattern in patterns {
+            let resolved = await CLISessionStore.shared.resolveRemotePath(pattern)
+            if !pattern.contains("*"), !pattern.contains("?") {
+                results.append(resolved)
+                continue
+            }
+            let parent = (resolved as NSString).deletingLastPathComponent
+            let name = (resolved as NSString).lastPathComponent
+            let parentPath = parent.isEmpty ? await CLISessionStore.shared.currentRemotePath() : parent
+            let entries = try await backend.listDirectory(at: parentPath)
+            let regex = globToRegex(name)
+            for entry in entries where entry.type == .file {
+                if entry.name.range(of: regex, options: .regularExpression) != nil {
+                    results.append(entry.path)
+                }
+            }
+        }
+        return results
+    }
+
+    private static func globToRegex(_ glob: String) -> String {
+        "^" + NSRegularExpression.escapedPattern(for: glob)
+            .replacingOccurrences(of: "\\*", with: ".*")
+            .replacingOccurrences(of: "\\?", with: ".") + "$"
+    }
 }
 
 enum CLIErrorMapper {
@@ -643,10 +710,12 @@ enum MacSCPScriptRunner {
         case "ls":
             try await CLIActions.ls(path: parts.count > 1 ? parts[1] : "/", json: CLIRuntime.jsonOutput)
         case "get":
-            guard parts.count >= 3 else { throw CLIError.usage("get remote local") }
+            guard parts.count >= 3 else { throw CLIError.usage("get remote [remote...] local") }
+            let local = parts.last!
+            let remotes = Array(parts.dropFirst().dropLast())
             try await CLIActions.get(
-                remote: parts[1],
-                local: parts[2],
+                remotes: remotes,
+                local: local,
                 resume: context.resumeTransfers,
                 transferMode: context.transferMode
             )

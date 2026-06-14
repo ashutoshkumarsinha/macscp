@@ -167,6 +167,11 @@ if [[ -n "${SIGN_IDENTITY}" && "${SKIP_SIGN}" != "1" ]]; then
   codesign --force --sign "${SIGN_IDENTITY}" "${DMG_PATH}" || true
 fi
 
+if [[ "${MACSCP_NOTARIZE:-0}" == "1" ]]; then
+  echo "==> Notarizing DMG (MACSCP_NOTARIZE=1)"
+  "${ROOT}/scripts/notarize-dmg.sh" "${DMG_PATH}"
+fi
+
 echo ""
 echo "Done."
 echo "  App: ${APP_DIR}"

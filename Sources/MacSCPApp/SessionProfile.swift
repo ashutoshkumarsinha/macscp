@@ -190,8 +190,7 @@ struct SessionProfile: Identifiable, Codable, Equatable {
 
 struct ProfileStore {
     private var url: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return base.appendingPathComponent("MacSCP/profiles.json")
+        MacSCPPaths.profilesURL()
     }
 
     func load() throws -> [SessionProfile] {

@@ -40,8 +40,9 @@ These flags are available on every subcommand via `@OptionGroup`:
 |---|---|
 | `--session <name\|uuid>` | Use saved profile from `~/Library/Application Support/MacSCP/profiles.json` (password/key from Keychain or `MACSCP_PASSPHRASE`) |
 | `--ini none` | Skip loading `~/.macscp/config.toml` (WinSCP `/ini=nul` equivalent). Other `--ini` paths are reserved |
-| `--loglevel <level>` | Parsed (`debug`, `info`, `warning`, `error`); wiring to file logger is partial |
-| `--logfile <path>` | Parsed; full structured log append not yet wired |
+| `--ini <path>` | Load transfer settings from a custom config.toml, or `none` to skip |
+| `--loglevel <level>` | Minimum log level (`debug`, `info`, `warning`, `error`) |
+| `--logfile <path>` | Append structured logs to a single file (NDJSON/human messages unaffected) |
 | `--json` | JSON for `ls`, `call stat`, `version`; NDJSON event stream for `get`, `put`, `sync`, `open`, `close` |
 | `--quiet` / `-q` | Suppress non-error stdout |
 | `--batch` | Strict host keys; no interactive trust prompts |
@@ -76,9 +77,9 @@ After raw settings, MacSCP merges `~/.ssh/config` for matching Host aliases, inc
 | Variable | Purpose |
 |---|---|
 | `MACSCP_PASSPHRASE` | Default passphrase for encrypted private keys |
+| `MACSCP_PROFILES` | Override path to saved profiles JSON |
+| `MACSCP_KNOWN_HOSTS` | Override path to TOFU known-hosts JSON |
 | `SSH_AUTH_SOCK` | SSH agent socket (standard OpenSSH) |
-
-Not yet implemented: `MACSCP_PROFILES`, `MACSCP_KNOWN_HOSTS` overrides.
 
 ---
 
@@ -126,11 +127,13 @@ macscp open sftp://user@host --rawsettings ProxyJump=jump.host
 |---|---|
 | `--agent` | Use SSH agent (`SSH_AUTH_SOCK`) |
 | `--password` | Password authentication |
+| `--passive` / `--active` | FTP passive or active mode |
+| `--implicit` / `--explicit` | FTPS implicit (990) or explicit TLS |
 | `--batch` | Strict host keys (also global `--batch`) |
 
 On connect: `--rawsettings` → merge `~/.ssh/config` (HostName, Port, User, IdentityFile, ProxyJump, **Include**). Proxy/jump sessions use Traversio.
 
-**Not on CLI `open` yet:** FTP `-passive`, FTPS `-explicit`/`-implicit` (use saved profiles or URLs).
+**Not on CLI `open`:** nothing critical — use `--passive`, `--implicit`, etc. above for FTP/FTPS tuning.
 
 ---
 
@@ -139,16 +142,17 @@ On connect: `--rawsettings` → merge `~/.ssh/config` (HostName, Port, User, Ide
 ```bash
 macscp close
 macscp ls [/remote/path] [--json]
-macscp get <remote> <local> [--resume] [--skip] [--checksum md5|sha256] [--transfer binary|ascii]
+macscp get <remote> [remote...] <local> [--resume] [--skip] [--checksum md5|sha256] [--transfer binary|ascii]
 macscp put <local> <remote> [--resume] [--skip] [--checksum md5|sha256] [--transfer binary|ascii]
 ```
+
+- **`get` with multiple remotes:** last argument must be an existing local directory.
+- **Remote globs on `get`:** `*` and `?` in the final path component (lists parent directory).
 
 - **`--resume`:** Resume partial transfer when local (download) or remote (upload) file is shorter than source. Works on Citadel and Traversio SFTP backends.
 - **`--skip`:** Skip if destination exists (`OverwritePolicy.skip`).
 - Paths resolve against the session remote cwd after `cd`.
 - With **`--json`**, each transfer emits NDJSON lines on stdout (`transfer.start`, `transfer.progress`, `transfer.complete`; `transfer.error` on failure). `sync` adds `sync.preview`, `sync.start`, and `sync.complete`.
-
-**Not yet:** multi-source `get`/`put` (last arg = directory), remote globs on `get`.
 
 **JSON `ls` output:**
 
@@ -341,11 +345,10 @@ Full mapping: [scripting.md § WinSCP Compatibility](scripting.md#winscp-compati
 
 | Feature | Workaround |
 |---|---|
-| `MACSCP_PROFILES` / `MACSCP_KNOWN_HOSTS` env | Default Application Support paths |
-| FTP passive / FTPS modes on CLI `open` | Saved GUI profile or extend `open` |
-| WebDAV / S3 `chmod` | WebDAV PROPPATCH; S3 PutObjectAcl (canned ACL mapping) |
-| `call chown` on FTP/WebDAV/S3 | Not available (SSH backends only) |
-| Multi-file `get` with glob | Loop in shell script |
+| `option reconnecttime` in scripts | Use `macscp --timeout` on the command line |
+| Symbolic `chmod` (`u+x`) | Use octal modes |
+| `call chown` on FTP/WebDAV/S3 | SSH backends only |
+| Multi-source `put` to one remote dir | Loop in shell script |
 
 ---
 

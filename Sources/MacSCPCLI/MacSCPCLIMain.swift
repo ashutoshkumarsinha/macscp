@@ -16,6 +16,7 @@ enum MacSCPCLIMain {
         let args = Array(CommandLine.arguments.dropFirst())
         if args.count == 1, args[0].hasSuffix(".macscp") || args[0].hasSuffix(".txt") {
             do {
+                CLIRuntime.bootstrapLogging()
                 try await CLIActions.runScript(at: args[0])
             } catch let error as CLIError {
                 fputs("\(error)\n", stderr)
@@ -96,6 +97,7 @@ struct CLIGlobalOptions: ParsableArguments {
             loglevel: loglevel,
             logfile: logfile
         )
+        CLIRuntime.bootstrapLogging()
     }
 }
 
@@ -123,6 +125,18 @@ extension MacSCPCLICommand {
         @Option(name: .customLong("rawsettings"), parsing: .upToNextOption, help: "OpenSSH-style settings (ProxyJump=host).")
         var rawSettings: [String] = []
 
+        @Flag(name: .long, help: "FTP passive mode.")
+        var passive = false
+
+        @Flag(name: .long, help: "FTP active mode.")
+        var active = false
+
+        @Flag(name: .long, help: "FTPS implicit TLS (port 990).")
+        var implicit = false
+
+        @Flag(name: .long, help: "FTPS explicit TLS.")
+        var explicit = false
+
         mutating func run() async throws {
             try await CLIActions.open(
                 url: url,
@@ -133,7 +147,9 @@ extension MacSCPCLICommand {
                 agent: agent,
                 hostkey: global.hostkey.last,
                 batch: global.batch,
-                rawSettings: rawSettings
+                rawSettings: rawSettings,
+                ftpPassive: active ? false : (passive ? true : nil),
+                ftpsImplicit: implicit ? true : (explicit ? false : nil)
             )
         }
     }
@@ -152,10 +168,10 @@ extension MacSCPCLICommand {
     }
 
     struct Get: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Download remote file.")
+        static let configuration = CommandConfiguration(abstract: "Download remote file(s).")
         @OptionGroup var global: CLIGlobalOptions
-        @Argument(help: "Remote path") var remote: String
-        @Argument(help: "Local destination") var local: String
+        @Argument(help: "Remote path(s) or glob") var remotes: [String]
+        @Argument(help: "Local destination file or directory") var local: String
         @Flag(name: .long, help: "Resume partial transfer.") var resume = false
         @Flag(name: .long, help: "Skip existing files.") var skip = false
         @Option(name: .long, help: "Checksum: md5 or sha256.") var checksum: String?
@@ -163,7 +179,7 @@ extension MacSCPCLICommand {
 
         mutating func run() async throws {
             try await CLIActions.get(
-                remote: remote,
+                remotes: remotes,
                 local: local,
                 resume: resume,
                 overwrite: skip ? .skip : .overwrite,

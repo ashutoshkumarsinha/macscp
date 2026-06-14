@@ -20,8 +20,7 @@ public enum MacSCPHostKeyTrustStore {
     }
 
     public static func storeURL(homeDirectory: URL? = nil) -> URL {
-        let home = homeDirectory ?? FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".macscp/known_hosts.json")
+        MacSCPPaths.knownHostsURL(homeDirectory: homeDirectory)
     }
 
     public static func endpointKey(host: String, port: Int) -> String {

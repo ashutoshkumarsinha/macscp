@@ -85,24 +85,33 @@ struct PropertiesSheetView: View {
     let paneSide: FilePaneSide
     let entryName: String
     let permissionsOctal: String
-    let onSave: (String) -> Void
+    let supportsChown: Bool
+    let onSave: (String, String, String) -> Void
     let onCancel: () -> Void
 
     @State private var octal: String
+    @State private var ownerUser: String
+    @State private var ownerGroup: String
 
     init(
         paneSide: FilePaneSide,
         entryName: String,
         permissionsOctal: String,
-        onSave: @escaping (String) -> Void,
+        supportsChown: Bool,
+        ownerUser: String = "",
+        ownerGroup: String = "",
+        onSave: @escaping (String, String, String) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.paneSide = paneSide
         self.entryName = entryName
         self.permissionsOctal = permissionsOctal
+        self.supportsChown = supportsChown
         self.onSave = onSave
         self.onCancel = onCancel
         _octal = State(initialValue: permissionsOctal)
+        _ownerUser = State(initialValue: ownerUser)
+        _ownerGroup = State(initialValue: ownerGroup)
     }
 
     var body: some View {
@@ -110,24 +119,27 @@ struct PropertiesSheetView: View {
             Text("Properties — \(entryName)")
                 .font(.headline)
 
-            if paneSide == .remote {
-                TextField("Permissions (octal)", text: $octal)
+            TextField("Permissions (octal)", text: $octal)
+                .textFieldStyle(.roundedBorder)
+            Text("Example: 644 for rw-r--r--")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if supportsChown {
+                TextField("Owner (user or uid)", text: $ownerUser)
                     .textFieldStyle(.roundedBorder)
-                Text("Example: 644 for rw-r--r--")
+                TextField("Group (group or gid)", text: $ownerGroup)
+                    .textFieldStyle(.roundedBorder)
+                Text("Leave blank to keep unchanged. SSH backends only.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Local permission editing is not supported yet.")
                     .foregroundStyle(.secondary)
             }
 
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel, action: onCancel)
-                if paneSide == .remote {
-                    Button("Save", action: { onSave(octal) })
-                        .keyboardShortcut(.defaultAction)
-                }
+                Button("Save") { onSave(octal, ownerUser, ownerGroup) }
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)

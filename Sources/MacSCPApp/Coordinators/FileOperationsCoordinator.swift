@@ -140,4 +140,38 @@ final class FileOperationsCoordinator {
             return false
         }
     }
+
+    func setLocalPermissions(_ permissions: FilePermissions, name: String, localPath: URL) -> Bool {
+        let url = localPath.appendingPathComponent(name)
+        do {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: permissions.octal],
+                ofItemAtPath: url.path
+            )
+            onStatusMessage?("Updated local permissions for \(name)")
+            return true
+        } catch {
+            onStatusMessage?("chmod failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    func setRemoteOwnership(
+        user: String?,
+        group: String?,
+        name: String,
+        backend: TransferBackend?,
+        remotePath: String
+    ) async -> Bool {
+        guard let backend else { return false }
+        let path = SFTPPathJoin.joinRemote(remotePath, name)
+        do {
+            try await backend.setOwnership(user: user, group: group, at: path)
+            onStatusMessage?("Updated owner for \(name)")
+            return true
+        } catch {
+            onStatusMessage?("chown failed: \(error.localizedDescription)")
+            return false
+        }
+    }
 }
