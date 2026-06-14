@@ -3,7 +3,7 @@
 #
 # Usage:
 #   ./scripts/ci-local.sh
-#   ./scripts/ci-local.sh --skip-bench   # tests only
+#   ./scripts/ci-local.sh --skip-bench   # tests only (skips release bench-verify)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

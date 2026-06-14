@@ -21,15 +21,16 @@ Design and implementation references for the MacSCP project. All documents align
 ## Quick commands
 
 ```bash
-make build test   # compile + 144 XCTest + 3 Swift Testing
+make build test   # compile + 164 XCTest + 7 Swift Testing
 make integration-test   # live SFTP against :2222 (CI)
 make run          # local SFTP fixture + launch app
 make paths        # ~/.macscp paths, profiles, known hosts
-make bench                 # SFTP throughput benchmarks
+make bench                 # release SFTP throughput benchmarks
 make bench-apple-silicon   # bench with hostInfo metadata
 make bench-verify          # bench-apple-silicon + pass-criteria check
+make bench-cloud           # WebDAV + S3 upload benchmarks (optional fixtures)
 make ci                    # check + bench-verify (local GitHub Actions parity)
-./scripts/ci-local.sh      # same as make ci
+./scripts/ci-local.sh      # same as make ci (--skip-bench for tests only)
 ```
 
 ## Scripts
@@ -37,9 +38,10 @@ make ci                    # check + bench-verify (local GitHub Actions parity)
 | Script | Purpose |
 |---|---|
 | [benchmark-env.sh](../scripts/benchmark-env.sh) | Start/stop local OpenSSH SFTP on `:2222` |
-| [run-benchmarks.sh](../scripts/run-benchmarks.sh) | Run `macscp-benchmark` (optional `--verify`) |
-| [verify-benchmark-report.sh](../scripts/verify-benchmark-report.sh) | Exit non-zero when `passCriteriaMet` is false |
-| [ci-local.sh](../scripts/ci-local.sh) | `make check` + benchmarks + verify |
+| [benchmark-cloud-env.sh](../scripts/benchmark-cloud-env.sh) | Start/stop WebDAV + MinIO for `cloud-backends` |
+| [run-benchmarks.sh](../scripts/run-benchmarks.sh) | Build release `macscp-benchmark`, run suite or subcommand (`--verify`, `--keep-server`) |
+| [verify-benchmark-report.sh](../scripts/verify-benchmark-report.sh) | Exit non-zero when `passCriteriaMet` is false; lists failed scenarios |
+| [ci-local.sh](../scripts/ci-local.sh) | `make check` + `make bench-verify` (`--skip-bench` for tests only) |
 | [package-dmg.sh](../scripts/package-dmg.sh) | Release `.app` + DMG packaging |
 | [build-finder-sync.sh](../scripts/build-finder-sync.sh) | Compile Finder Sync extension |
 | [generate-app-icon.sh](../scripts/generate-app-icon.sh) | App icon asset catalog + `.icns` |

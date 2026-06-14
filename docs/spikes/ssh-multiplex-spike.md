@@ -55,7 +55,7 @@ Run against the local SFTP fixture:
 ```bash
 make bench-multiplex
 # or
-swift run macscp-benchmark multiplex-spike
+./scripts/run-benchmarks.sh multiplex-spike
 ```
 
 The runner compares:

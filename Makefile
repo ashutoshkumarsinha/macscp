@@ -2,7 +2,7 @@
 #
 # Usage:
 #   make              # show targets
-#   make build test   # compile and run tests (144 XCTest + 3 Swift Testing)
+#   make build test   # compile and run tests (164 XCTest + 7 Swift Testing)
 #   make run          # launch MacSCP (starts local SFTP fixture first)
 #
 # Related: scripts/benchmark-env.sh, scripts/ci-local.sh, docs/user-guide.md
@@ -91,29 +91,29 @@ bench-full: server-start ## Run full benchmark suite (1 MB / 100 MB / 1 GB, 10k 
 	MACSCP_BENCH_FULL=1 $(RUN_BENCH)
 
 bench-upload-spike: server-start ## Citadel vs Traversio vs OpenSSH upload comparison
-	$(SWIFT) run macscp-benchmark upload-spike
+	$(RUN_BENCH) upload-spike
 
-bench-apple-silicon: server-start ## Benchmark with host metadata (MACSCP_BENCH_NETWORK=loopback)
+bench-apple-silicon: server-start ## Release benchmark with host metadata (loopback)
 	MACSCP_BENCH_NETWORK=loopback $(RUN_BENCH)
 
 bench-verify: bench-apple-silicon ## Run bench-apple-silicon and verify passCriteriaMet
 	$(VERIFY_BENCH)
 
 bench-profile: server-start ## Sweep upload concurrency settings
-	$(SWIFT) run macscp-benchmark profile-upload
+	$(RUN_BENCH) profile-upload
 
 bench-pool-connect: server-start ## Single vs pooled SFTP connect timing
-	$(SWIFT) run macscp-benchmark pool-connect
+	$(RUN_BENCH) pool-connect
 
 bench-multiplex: server-start ## Dual SSH vs multiplex SFTP channel spike
-	$(SWIFT) run macscp-benchmark multiplex-spike
+	$(RUN_BENCH) multiplex-spike
 
 bench-proxy-command: server-start ## ProxyCommand relay overhead vs direct connect
-	$(SWIFT) run macscp-benchmark proxy-command
+	$(RUN_BENCH) proxy-command
 
 bench-cloud: ## WebDAV + S3 upload benchmarks (starts cloud fixtures)
-	$(ROOT)scripts/benchmark-cloud-env.sh start
-	@eval "$$($(ROOT)scripts/benchmark-cloud-env.sh env)" && $(SWIFT) run macscp-benchmark cloud-backends
+	$(SCRIPTS)/benchmark-cloud-env.sh start
+	@eval "$$($(SCRIPTS)/benchmark-cloud-env.sh env)" && $(RUN_BENCH) --keep-server cloud-backends
 
 bench-cloud-verify: bench-cloud ## Cloud backend benchmarks with fixture startup
 	@echo "Cloud backend report: .benchmark/benchmark-results/cloud-backends.json"
@@ -148,7 +148,7 @@ paths: ## Print runtime paths (config, logs, profiles, known hosts)
 	@echo "Profiles:   $(HOME)/Library/Application Support/MacSCP/profiles.json"
 	@echo "Known hosts: $(HOME)/.macscp/known_hosts.json"
 	@echo "Benchmark:  $(ROOT).benchmark/ (local SFTP fixture on :2222)"
-	@echo "Scripts:    $(SCRIPTS)/benchmark-env.sh run-benchmarks.sh verify-benchmark-report.sh ci-local.sh notarize-dmg.sh prepare-homebrew-release.sh"
+	@echo "Scripts:    $(SCRIPTS)/benchmark-env.sh benchmark-cloud-env.sh run-benchmarks.sh verify-benchmark-report.sh ci-local.sh notarize-dmg.sh prepare-homebrew-release.sh"
 
 notarize: package-dmg ## Notarize dist/MacSCP-*.dmg (requires Apple credentials)
 	chmod +x $(SCRIPTS)/notarize-dmg.sh

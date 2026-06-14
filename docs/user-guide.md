@@ -35,7 +35,7 @@ This guide covers what is **implemented in v0.3**, including Phase 3 cloud proto
 git clone <repository-url> macscp
 cd macscp
 make build
-make test    # 144 XCTest + 3 Swift Testing (+ make integration-test for live SFTP)
+make test    # 164 XCTest + 7 Swift Testing (+ make integration-test for live SFTP)
 make check   # build + test (same as CI first step)
 ```
 
@@ -473,7 +473,7 @@ MacSCP optimizes SFTP throughput in several ways:
 
 ```bash
 make bench-apple-silicon
-make bench-verify    # fails if below spec pass criteria (large ≥ 0.90×, small ≥ 0.80× OpenSSH)
+make bench-verify    # release bench + verify; fails if below spec (large ≥ 0.90×, small ≥ 0.80× OpenSSH)
 ```
 
 Details: [SFTP backend spike](spikes/sftp-backend-spike.md).

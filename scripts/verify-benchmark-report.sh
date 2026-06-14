@@ -2,7 +2,9 @@
 # Verify macscp-benchmark pass criteria in a JSON report.
 #
 # Exits 0 when summary.passCriteriaMet is true; non-zero otherwise.
-# Used by: make bench-verify, .github/workflows/ci.yml
+# Prints each failed scenario before exiting.
+#
+# Used by: make bench-verify, .github/workflows/ci.yml, run-benchmarks.sh --verify
 #
 # Usage:
 #   ./scripts/verify-benchmark-report.sh
@@ -20,8 +22,6 @@ if [[ ! -f "${REPORT}" ]]; then
   exit 1
 fi
 
-# --- Check summary.passCriteriaMet ---
-
 python3 - "${REPORT}" <<'PY'
 import json
 import sys
@@ -31,6 +31,16 @@ with open(path, encoding="utf-8") as handle:
     report = json.load(handle)
 
 summary = report.get("summary", {})
+results = report.get("results", [])
+failed = [r for r in results if not r.get("passed")]
+
+if failed:
+    print("Failed benchmark scenarios:", file=sys.stderr)
+    for item in failed:
+        scenario = item.get("scenario", "?")
+        notes = item.get("notes", "")
+        print(f"  - {scenario}: {notes}", file=sys.stderr)
+
 if not summary.get("passCriteriaMet"):
     print("Benchmark pass criteria not met:", json.dumps(summary, indent=2), file=sys.stderr)
     sys.exit(1)

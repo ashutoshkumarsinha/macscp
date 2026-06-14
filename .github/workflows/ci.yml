@@ -48,7 +48,7 @@ jobs:
         run: |
           ./scripts/benchmark-cloud-env.sh start
           eval "$(./scripts/benchmark-cloud-env.sh env)"
-          swift run macscp-benchmark cloud-backends
+          ./scripts/run-benchmarks.sh --keep-server cloud-backends
 
       - name: Upload benchmark report
         if: always()

@@ -48,13 +48,19 @@ See also [performance-roadmap.md](performance-roadmap.md) for the full enhanceme
 
 ## Benchmarks
 
+`run-benchmarks.sh` and `make bench*` build and run the **release** `macscp-benchmark` binary. Debug builds inflate small-file batch times and can fail the ≥0.80× OpenSSH gate spuriously.
+
 ```bash
 make bench-apple-silicon   # hostInfo in report (MACSCP_BENCH_NETWORK=loopback)
 make bench                 # standard quick suite
 make bench-upload-spike    # Citadel vs Traversio vs OpenSSH
 make bench-verify          # bench-apple-silicon + pass-criteria check
-swift run macscp-benchmark pool-connect   # single vs pooled connect latency
+make bench-pool-connect    # single vs pooled connect latency
+make bench-multiplex       # dual SSH vs multiplex SFTP channels
+make bench-proxy-command   # ProxyCommand relay overhead
+make bench-cloud           # WebDAV + S3 (benchmark-cloud-env.sh)
 ./scripts/run-benchmarks.sh --verify
+./scripts/run-benchmarks.sh --keep-server pool-connect
 ```
 
 Environment variables:
@@ -63,6 +69,7 @@ Environment variables:
 |---|---|
 | `MACSCP_BENCH_NETWORK` | `loopback` (default), `lan`, `wifi`, `wan` — tagged in report `hostInfo` |
 | `MACSCP_BENCH_FULL` | Full file sizes and 10k small files |
+| `MACSCP_BENCH_KEEP_SERVER` | Leave SFTP fixture running after `run-benchmarks.sh` (same as `--keep-server`) |
 
 Reports include `hostInfo` (architecture, core count, OS version, network profile).
 
@@ -101,8 +108,9 @@ Buffer sizes (from `TransferPerformanceTuning`):
 GitHub Actions workflow [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on `macos-15` (Apple Silicon):
 
 1. `make check` — build + unit tests
-2. `make bench-apple-silicon` — throughput suite with `hostInfo`
-3. `./scripts/verify-benchmark-report.sh` — fail when `passCriteriaMet` is false
+2. `make bench-apple-silicon` — release throughput suite with `hostInfo`
+3. `./scripts/verify-benchmark-report.sh` — fail when `passCriteriaMet` is false (lists failed scenarios)
+4. Optional: cloud backend benchmarks via `benchmark-cloud-env.sh`
 
 Benchmark JSON is uploaded as a workflow artifact. Local parity:
 
@@ -114,4 +122,4 @@ make ci
 
 ## Success criteria
 
-See `docs/spikes/sftp-backend-spike.md` — large upload ≥ 0.90× OpenSSH, small upload ≥ 0.80× on loopback.
+See `docs/spikes/sftp-backend-spike.md` — large upload ≥ 0.90× OpenSSH, small upload ≥ 0.80× on loopback. Run benchmarks in **release** mode (`run-benchmarks.sh` does this automatically).

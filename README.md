@@ -19,11 +19,12 @@ Sources/
   MacSCPCLI/          macscp-cli scriptable SFTP client (installed as macscp)
   MacSCPBenchmark/    macscp-benchmark CLI (throughput vs OpenSSH)
 Tests/
-  MacSCPTests/        144 XCTest + 3 Swift Testing (+ optional live SFTP integration)
+  MacSCPTests/        164 XCTest + 7 Swift Testing (+ optional live SFTP integration)
 scripts/
   benchmark-env.sh    Local OpenSSH SFTP server on port 2222
-  run-benchmarks.sh   Start server + run benchmarks (--verify optional)
-  verify-benchmark-report.sh  Fail when passCriteriaMet is false
+  benchmark-cloud-env.sh  WebDAV + MinIO fixtures for cloud-backends
+  run-benchmarks.sh   Release macscp-benchmark + SFTP fixture (--verify, --keep-server)
+  verify-benchmark-report.sh  Fail when passCriteriaMet is false (lists failed scenarios)
   ci-local.sh         Local mirror of GitHub Actions CI
   generate-app-icon.sh
   package-dmg.sh
@@ -36,7 +37,7 @@ packaging/homebrew/   Cask (GUI) + Formula (CLI) templates
 
 ```bash
 make build
-make test      # 144 XCTest + 3 Swift Testing
+make test      # 164 XCTest + 7 Swift Testing
 make integration-test   # live SFTP smoke test (starts :2222 fixture)
 make check     # build + test (CI-friendly)
 make ci        # check + bench-apple-silicon + verify pass criteria
@@ -98,6 +99,8 @@ make server-status
 
 ## Run SFTP benchmarks
 
+Benchmarks run the **release** `macscp-benchmark` binary (`run-benchmarks.sh` builds `-c release` first). Debug builds skew small-file batch timings.
+
 ```bash
 make bench
 make bench-apple-silicon   # tags hostInfo + MACSCP_BENCH_NETWORK=loopback in report
@@ -105,6 +108,17 @@ make bench-verify          # bench-apple-silicon + pass-criteria check
 # or
 ./scripts/run-benchmarks.sh
 ./scripts/run-benchmarks.sh --verify
+./scripts/run-benchmarks.sh pool-connect
+./scripts/run-benchmarks.sh --keep-server multiplex-spike
+```
+
+Additional spike subcommands (also via `run-benchmarks.sh <subcommand>`):
+
+```bash
+make bench-pool-connect
+make bench-multiplex
+make bench-proxy-command
+make bench-cloud          # requires Docker or native MinIO (see benchmark-cloud-env.sh)
 ```
 
 Full suite (1 MB / 100 MB / 1 GB, 10k small files):
@@ -144,7 +158,8 @@ Verify pass criteria locally (same check as CI):
 GitHub Actions (`.github/workflows/ci.yml`) runs on `macos-15` (Apple Silicon) with **Xcode 26** (Swift 6.2+ for Traversio):
 
 - `make check` — build + unit tests
-- `make bench-apple-silicon` + `./scripts/verify-benchmark-report.sh`
+- `make bench-apple-silicon` + `./scripts/verify-benchmark-report.sh` (release benchmarks)
+- Optional cloud backend step (`benchmark-cloud-env.sh` + `cloud-backends`, `continue-on-error`)
 
 Local equivalent:
 

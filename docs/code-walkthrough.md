@@ -179,7 +179,7 @@ See [apple-silicon-performance.md](apple-silicon-performance.md) for benchmarks 
 
 ```bash
 make build    # compile
-make test     # 144 XCTest + 3 Swift Testing
+make test     # 164 XCTest + 7 Swift Testing
 make check    # build + test
 make ci         # check + bench-verify (matches GitHub Actions)
 make run      # start test server + open app

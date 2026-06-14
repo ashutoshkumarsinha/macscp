@@ -40,14 +40,14 @@ Tracking document for MacSCP throughput, latency, and resource-use improvements.
 | WebDAV upload peak RSS | ≈ chunk size, not full file |
 | S3 500 MB+ multipart | ≥ 1.5× vs sequential parts |
 
-Run benchmarks:
+Run benchmarks (release binary via `run-benchmarks.sh`):
 
 ```bash
 make bench-verify
-swift run macscp-benchmark pool-connect
-swift run macscp-benchmark multiplex-spike
-swift run macscp-benchmark proxy-command
-make bench-cloud   # WebDAV + MinIO fixtures
+make bench-pool-connect
+make bench-multiplex
+make bench-proxy-command
+make bench-cloud   # WebDAV + MinIO via benchmark-cloud-env.sh
 ```
 
 See [apple-silicon-performance.md](apple-silicon-performance.md) for tuning presets.
