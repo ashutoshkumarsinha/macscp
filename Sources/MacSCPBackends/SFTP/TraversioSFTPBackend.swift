@@ -44,6 +44,13 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
         let connection = try await SSHClient.connect(configuration: sshConfig)
         let sftp = try await connection.openSFTP()
 
+        TransferNetworkTuning.logAppliedSettings(
+            profile: configuration.networkProfile,
+            sendBuffer: TransferPerformanceTuning.tcpSendBufferBytes(for: configuration.networkProfile),
+            receiveBuffer: TransferPerformanceTuning.tcpReceiveBufferBytes(for: configuration.networkProfile),
+            tcpNoDelay: TransferPerformanceTuning.usesTCPNoDelay(for: configuration.networkProfile)
+        )
+
         self.connection = connection
         self.sftp = sftp
         self.configuration = configuration
@@ -296,17 +303,46 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
         let remoteHandle = try await sftp.openFile(resolved, flags: [.write])
         let reader = try LocalFileSequentialReader(url: localURL)
         let chunkSize = max(options.chunkSize, 32 * 1024)
-        var offset = Int(startOffset)
+        let concurrency = max(options.maxConcurrentWrites, 1)
+
+        struct Chunk: Sendable {
+            let offset: Int
+            let length: Int
+        }
+
+        var chunks: [Chunk] = []
+        chunks.reserveCapacity(max(1, (Int(totalSize) - Int(startOffset)) / chunkSize))
+        var nextOffset = Int(startOffset)
+        while nextOffset < Int(totalSize) {
+            let length = min(chunkSize, Int(totalSize) - nextOffset)
+            chunks.append(Chunk(offset: nextOffset, length: length))
+            nextOffset += length
+        }
+
         var bytesWritten: UInt64 = 0
 
         do {
-            while offset < Int(totalSize) {
-                try options.throwIfCancelled()
-                let data = try reader.read(from: offset, count: chunkSize)
-                if data.isEmpty { break }
-                try await remoteHandle.write(Array(data), at: UInt64(offset))
-                offset += data.count
-                bytesWritten += UInt64(data.count)
+            var chunkIndex = 0
+            try await withThrowingTaskGroup(of: Int.self) { group in
+                var inFlight = 0
+                while chunkIndex < chunks.count || inFlight > 0 {
+                    try options.throwIfCancelled()
+                    while inFlight < concurrency, chunkIndex < chunks.count {
+                        let chunk = chunks[chunkIndex]
+                        chunkIndex += 1
+                        inFlight += 1
+                        group.addTask {
+                            let data = try reader.read(from: chunk.offset, count: chunk.length)
+                            if data.isEmpty { return 0 }
+                            try await remoteHandle.write(Array(data), at: UInt64(chunk.offset))
+                            return data.count
+                        }
+                    }
+                    if let written = try await group.next() {
+                        bytesWritten += UInt64(written)
+                        inFlight -= 1
+                    }
+                }
             }
         } catch {
             try? await remoteHandle.close()
@@ -467,5 +503,54 @@ public final class TraversioSFTPBackend: CapableTransferBackend, @unchecked Send
 
     private func mapEntryType(_ attributes: SSHSFTPFileAttributes) -> EntryType {
         SFTPAttributeMapping.entryType(fromPermissions: attributes.permissions)
+    }
+}
+
+extension TraversioSFTPBackend: DeltaCapableTransferBackend {
+    public func readRemoteRange(remotePath: String, offset: Int64, length: Int) async throws -> Data {
+        let sftp = try requireSFTP()
+        let resolved = pathResolver.resolve(remotePath)
+        let handle = try await sftp.openFile(resolved, flags: [.read])
+
+        var collected = Data()
+        collected.reserveCapacity(length)
+        var current = UInt64(offset)
+        let end = UInt64(offset) + UInt64(length)
+        let chunkSize = UInt32(min(length, 1_048_576))
+        do {
+            for try await chunk in handle.readChunks(startingAt: current, chunkSize: chunkSize) {
+                if chunk.bytes.isEmpty { continue }
+                collected.append(contentsOf: chunk.bytes)
+                current += UInt64(chunk.bytes.count)
+                if collected.count >= length || current >= end { break }
+            }
+        } catch {
+            try? await handle.close()
+            throw error
+        }
+        try await handle.close()
+        return collected.prefix(length)
+    }
+
+    public func writeRemoteRange(
+        remotePath: String,
+        offset: Int64,
+        data: Data,
+        create: Bool
+    ) async throws {
+        let sftp = try requireSFTP()
+        let resolved = pathResolver.resolve(remotePath)
+        let flags: SSHSFTPOpenFileFlags = create && offset == 0
+            ? [.write, .create, .truncate]
+            : [.write]
+        let handle = try await sftp.openFile(resolved, flags: flags)
+        do {
+            try await handle.write(Array(data), at: UInt64(offset))
+        } catch {
+            try? await handle.close()
+            throw error
+        }
+        try await handle.close()
+        await listingCache.invalidate(path: resolved)
     }
 }

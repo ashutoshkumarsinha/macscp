@@ -94,7 +94,7 @@ let package = Package(
         ),
         .testTarget(
             name: "MacSCPTests",
-            dependencies: ["MacSCPCore", "MacSCPBackends", "MacSCPUI"]
+            dependencies: ["MacSCPCore", "MacSCPBackends", "MacSCPUI", "MacSCPBenchmark"]
         ),
     ]
 )

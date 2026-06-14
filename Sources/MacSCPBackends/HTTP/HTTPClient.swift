@@ -45,24 +45,24 @@ enum HTTPClient {
     }
 
     static func upload(from localURL: URL, request: URLRequest, options: TransferOptions, remotePath: String) async throws -> Int64 {
-        let payload = try Data(contentsOf: localURL)
+        let fileSize = try localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize.map { Int64($0) } ?? 0
         var uploadRequest = request
-        uploadRequest.httpBody = payload
-        let (_, http) = try await Self.data(for: uploadRequest)
-        guard (200 ... 299).contains(http.statusCode) else {
-            throw BackendError.transferFailed("HTTP upload failed (\(http.statusCode))")
+        uploadRequest.httpBody = nil
+
+        let (_, http) = try await URLSession.shared.upload(for: uploadRequest, fromFile: localURL)
+        guard let response = http as? HTTPURLResponse, (200 ... 299).contains(response.statusCode) else {
+            throw BackendError.transferFailed("HTTP upload failed")
         }
-        let size = Int64(payload.count)
         options.progress?(
             TransferProgress(
                 transferID: UUID(),
                 direction: .upload,
                 path: remotePath,
-                totalBytes: size,
-                transferredBytes: size,
+                totalBytes: fileSize,
+                transferredBytes: fileSize,
                 bytesPerSecond: nil
             )
         )
-        return size
+        return fileSize
     }
 }

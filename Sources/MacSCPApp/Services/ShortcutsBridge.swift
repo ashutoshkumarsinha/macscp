@@ -139,24 +139,23 @@ enum ShortcutsBridge {
         operation: (TransferBackend) async throws -> Void
     ) async throws {
         var config = configuration
+        let transferSettings: MacSCPTransferSettings
         if let settings = try? MacSCPConfiguration.loadSettings(
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser
         ) {
+            transferSettings = settings.transfer
             config.networkProfile = TransferPerformanceTuning.networkProfile(from: settings.transfer.preset)
+        } else {
+            transferSettings = MacSCPTransferSettings()
         }
 
-        let backendKind = SFTPBackendSelector.select(
-            authMethod: config.authMethod,
-            settings: (try? MacSCPConfiguration.loadSettings(
-                homeDirectory: FileManager.default.homeDirectoryForCurrentUser
-            ))?.transfer ?? MacSCPTransferSettings()
+        let poolSize = TransferPerformanceTuning.effectivePoolSize(from: transferSettings)
+        let usePool = poolSize > 1 ? true : nil
+        let backend = try await TransferSessionConnector.connect(
+            configuration: config,
+            transferSettings: transferSettings,
+            usePool: usePool
         )
-        let backend = try TransferBackendFactory.make(
-            for: config.protocol,
-            backend: backendKind,
-            serialized: true
-        )
-        try await backend.connect(configuration: config)
         defer { Task { try? await backend.disconnect() } }
         try await operation(backend)
     }

@@ -23,6 +23,7 @@ LOG_DIR     := $(HOME)/.macscp/logs
 .PHONY: help build build-release test check integration-test ci clean run cli \
         server-start server-stop server-restart server-status \
         bench bench-full bench-upload-spike bench-apple-silicon bench-profile bench-verify \
+        bench-pool-connect bench-multiplex bench-proxy-command bench-cloud bench-cloud-verify \
         build-release package-dmg package-cli icon notarize homebrew-release \
         logs config paths
 
@@ -100,6 +101,22 @@ bench-verify: bench-apple-silicon ## Run bench-apple-silicon and verify passCrit
 
 bench-profile: server-start ## Sweep upload concurrency settings
 	$(SWIFT) run macscp-benchmark profile-upload
+
+bench-pool-connect: server-start ## Single vs pooled SFTP connect timing
+	$(SWIFT) run macscp-benchmark pool-connect
+
+bench-multiplex: server-start ## Dual SSH vs multiplex SFTP channel spike
+	$(SWIFT) run macscp-benchmark multiplex-spike
+
+bench-proxy-command: server-start ## ProxyCommand relay overhead vs direct connect
+	$(SWIFT) run macscp-benchmark proxy-command
+
+bench-cloud: ## WebDAV + S3 upload benchmarks (starts cloud fixtures)
+	$(ROOT)scripts/benchmark-cloud-env.sh start
+	@eval "$$($(ROOT)scripts/benchmark-cloud-env.sh env)" && $(SWIFT) run macscp-benchmark cloud-backends
+
+bench-cloud-verify: bench-cloud ## Cloud backend benchmarks with fixture startup
+	@echo "Cloud backend report: .benchmark/benchmark-results/cloud-backends.json"
 
 # --- Packaging ---
 

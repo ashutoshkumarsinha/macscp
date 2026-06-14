@@ -91,9 +91,24 @@ public struct SyncFileMask: Sendable, Equatable {
 public struct SyncCompareOptions: Sendable, Equatable {
     public var criteria: SyncCompareCriteria
     public var fileMask: SyncFileMask
+    /// Parallel listDirectory calls while indexing remote trees.
+    public var maxConcurrentRemoteLists: Int
+    /// Reuse a cached remote index when still fresh (see SyncIndexStore).
+    public var useRemoteIndexCache: Bool
+    /// Cache key suffix; defaults to backend identifier at compare time when nil.
+    public var remoteIndexCacheKey: String?
 
-    public init(criteria: SyncCompareCriteria = .time, fileMask: SyncFileMask = SyncFileMask()) {
+    public init(
+        criteria: SyncCompareCriteria = .time,
+        fileMask: SyncFileMask = SyncFileMask(),
+        maxConcurrentRemoteLists: Int = 4,
+        useRemoteIndexCache: Bool = false,
+        remoteIndexCacheKey: String? = nil
+    ) {
         self.criteria = criteria
         self.fileMask = fileMask
+        self.maxConcurrentRemoteLists = max(1, maxConcurrentRemoteLists)
+        self.useRemoteIndexCache = useRemoteIndexCache
+        self.remoteIndexCacheKey = remoteIndexCacheKey
     }
 }

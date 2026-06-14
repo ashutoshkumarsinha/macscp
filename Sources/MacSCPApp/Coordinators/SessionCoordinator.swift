@@ -74,27 +74,21 @@ final class SessionCoordinator {
                 )
                 SFTPBackendSelector.logSelection(backendKind, settings: transferSettings, advanced: session.advanced)
                 TransferNetworkTuning.logIntendedSettings(preset: transferSettings.preset)
-
-                let poolSize = TransferPerformanceTuning.effectivePoolSize(from: transferSettings)
-                if poolSize > 1 {
-                    let pool = PooledTransferBackend(poolSize: poolSize, backendKind: backendKind)
-                    try await connectionService.connect(backend: pool, configuration: session)
-                    rawBackend = pool
-                } else {
-                    let single = try TransferBackendFactory.make(
-                        for: .sftp,
-                        backend: backendKind,
-                        serialized: true
-                    )
-                    try await connectionService.connect(backend: single, configuration: session)
-                    rawBackend = single
-                }
+                rawBackend = try await TransferSessionConnector.connect(
+                    configuration: session,
+                    transferSettings: transferSettings
+                )
             case .scp, .ftp, .ftps, .webdav, .s3, .gcs:
-                let single = try TransferBackendFactory.make(for: session.protocol, backend: .citadel)
-                try await connectionService.connect(backend: single, configuration: session)
-                rawBackend = single
+                rawBackend = try await TransferSessionConnector.connect(
+                    configuration: session,
+                    transferSettings: transferSettings,
+                    usePool: false
+                )
             }
 
+            try await rawBackend.changeDirectory(
+                to: session.initialRemotePath.isEmpty ? "/" : session.initialRemotePath
+            )
             backend = rawBackend
             remotePath = session.initialRemotePath.isEmpty ? "/" : session.initialRemotePath
             activeSessionName = draft.name.isEmpty ? session.host : draft.name

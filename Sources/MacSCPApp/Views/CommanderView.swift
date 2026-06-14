@@ -425,6 +425,10 @@ struct FilePaneView: View {
     @State private var typeAhead = ""
     @State private var dropTargeted = false
 
+    private var useVirtualizedList: Bool {
+        FilePaneListPolicy.usesVirtualizedList(entryCount: filteredEntries.count)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -453,21 +457,33 @@ struct FilePaneView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             Divider()
-            List(filteredEntries, selection: $selection) { entry in
-                row(for: entry)
-                    .contextMenu {
-                        Button("Rename") { onRename(entry.name) }
-                        Button("Properties") { onProperties(entry.name) }
-                        if paneSide == .remote && !entry.isDirectory {
-                            Button("Quick Look") { onQuickLook() }
-                            Button("Edit with Internal Editor") { onEditInternal() }
-                            Button("Edit with External Editor") { onEdit() }
+            Group {
+                if useVirtualizedList {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(filteredEntries) { entry in
+                                row(for: entry)
+                                    .background(
+                                        selection.contains(entry.name)
+                                            ? Color.accentColor.opacity(0.18)
+                                            : Color.clear
+                                    )
+                                    .onTapGesture {
+                                        selection = [entry.name]
+                                    }
+                            }
                         }
-                        Divider()
-                        Button("Delete", role: .destructive) { onDelete() }
                     }
+                } else {
+                    List(filteredEntries, selection: $selection) { entry in
+                        row(for: entry)
+                            .contextMenu {
+                                contextMenuItems(for: entry)
+                            }
+                    }
+                    .listStyle(.plain)
+                }
             }
-            .listStyle(.plain)
             .focusable()
             .focused($isFocused)
             .onKeyPress { press in
@@ -528,6 +544,19 @@ struct FilePaneView: View {
     }
 
     @ViewBuilder
+    private func contextMenuItems(for entry: PaneEntry) -> some View {
+        Button("Rename") { onRename(entry.name) }
+        Button("Properties") { onProperties(entry.name) }
+        if paneSide == .remote && !entry.isDirectory {
+            Button("Quick Look") { onQuickLook() }
+            Button("Edit with Internal Editor") { onEditInternal() }
+            Button("Edit with External Editor") { onEdit() }
+        }
+        Divider()
+        Button("Delete", role: .destructive) { onDelete() }
+    }
+
+    @ViewBuilder
     private func row(for entry: PaneEntry) -> some View {
         let content = HStack {
             Image(systemName: entry.isDirectory ? "folder.fill" : "doc")
@@ -540,6 +569,9 @@ struct FilePaneView: View {
         }
         .tag(entry.name)
         .contentShape(Rectangle())
+        .contextMenu {
+            contextMenuItems(for: entry)
+        }
         .onTapGesture(count: 2) {
             if entry.isDirectory {
                 onOpen(entry)

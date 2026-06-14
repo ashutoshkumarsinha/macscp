@@ -22,6 +22,10 @@ This enables:
 
 On first launch on Apple Silicon, MacSCP writes `preset = "apple_silicon"` (and matching numeric defaults) into new `~/.macscp/config.toml` files automatically.
 
+On Intel Macs, the same preset uses a conservative pool size of 2 connections.
+
+See also [performance-roadmap.md](performance-roadmap.md) for the full enhancement checklist.
+
 ## Architecture optimizations
 
 | Feature | Module | Benefit |
@@ -33,7 +37,12 @@ On first launch on Apple Silicon, MacSCP writes `preset = "apple_silicon"` (and 
 | Read-ahead SFTP I/O | `CitadelPipelinedWriter/Reader` | Overlap disk and network |
 | Streaming SHA-256 | `StreamingSHA256` | Verify without re-reading file |
 | Listing cache (3 s TTL) | `SFTPListingCache` (Citadel + Traversio) | Faster pane refresh |
-| Connection pool | `PooledTransferBackend` | Parallel queue jobs |
+| Connection pool | `PooledTransferBackend` | Parallel queue jobs; lazy warm-up (primary first) |
+| Shared connect | `TransferSessionConnector` | CLI, GUI, and Shortcuts use the same pool logic |
+| Sync index cache | `SyncIndexStore` | Skip full remote walks on repeat compares (5 min TTL) |
+| Parallel sync index | `DirectorySyncEngine` | Concurrent `listDirectory` during compare |
+| Streaming WebDAV upload | `HTTPClient.upload` | Disk streaming via `URLSession.upload(for:fromFile:)` |
+| S3 parallel multipart | `S3MultipartUpload` | Up to 4 parts in flight |
 | Background directory scan | `TransferCoordinator` | UI stays responsive |
 | TCP tuning | `CitadelTCPConnector` | Preset-driven socket buffers + Nagle |
 
@@ -44,6 +53,7 @@ make bench-apple-silicon   # hostInfo in report (MACSCP_BENCH_NETWORK=loopback)
 make bench                 # standard quick suite
 make bench-upload-spike    # Citadel vs Traversio vs OpenSSH
 make bench-verify          # bench-apple-silicon + pass-criteria check
+swift run macscp-benchmark pool-connect   # single vs pooled connect latency
 ./scripts/run-benchmarks.sh --verify
 ```
 

@@ -48,6 +48,8 @@ These flags are available on every subcommand via `@OptionGroup`:
 | `--batch` | Strict host keys; no interactive trust prompts |
 | `--hostkey <fingerprint>` | Expected host key (repeatable; last value wins on `open`) |
 | `--timeout <seconds>` | Sets `AdvancedSettings.connectionTimeoutSeconds` on connect |
+| `--pool` | Force SFTP connection pool for transfers (overrides config) |
+| `--no-pool` | Single serialized SFTP connection (disables pool even with `apple_silicon` preset) |
 
 Subcommand-specific options:
 
@@ -229,6 +231,7 @@ macscp sync ./public/ /var/www/html/ --bidirectional --preview
 | `--preview` | Dry run; print counts only |
 | `--filemask <mask>` | WinSCP-style include/exclude (see below) |
 | `--criteria time\|size\|checksum` | Compare method (default: `time`) |
+| `--delta` | rsync-style block delta for files ≥64 KB when both sides exist (SFTP) |
 
 **File mask syntax:**
 
@@ -243,6 +246,8 @@ Left of `|` = include globs; right = exclude.
 - `time` — size + mtime (1 s tolerance), same as GUI default
 - `size` — equal sizes → skip; else transfer
 - `checksum` — size match + mtime within 1 s → skip; else re-transfer (no full remote hash fetch)
+
+**Delta sync:** enable with `--delta` or `delta_sync = true` in `config.toml`. For files ≥64 KB where both local and remote copies exist, MacSCP computes an rsync-style block delta and uploads only changed regions (SFTP Citadel/Traversio). Falls back to full transfer when delta would send >90% of the file.
 
 ---
 

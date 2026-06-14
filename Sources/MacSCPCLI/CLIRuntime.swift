@@ -18,6 +18,8 @@ enum CLIRuntime {
     nonisolated(unsafe) static var hostKeyFingerprints: [String] = []
     nonisolated(unsafe) static var logLevel: MacSCPLogLevel?
     nonisolated(unsafe) static var logFile: URL?
+    /// nil = follow config preset; true/false override pooling for SFTP.
+    nonisolated(unsafe) static var poolOverride: Bool?
     nonisolated(unsafe) static var localWorkingDirectory = FileManager.default.homeDirectoryForCurrentUser.path
     static let version = "0.3.0"
 
@@ -31,6 +33,7 @@ enum CLIRuntime {
         hostKeyFingerprints = []
         logLevel = nil
         logFile = nil
+        poolOverride = nil
         localWorkingDirectory = FileManager.default.homeDirectoryForCurrentUser.path
     }
 
@@ -42,8 +45,12 @@ enum CLIRuntime {
         timeout: Int? = nil,
         hostkeys: [String] = [],
         loglevel: String? = nil,
-        logfile: String? = nil
+        logfile: String? = nil,
+        pool: Bool = false,
+        noPool: Bool = false
     ) {
+        if pool { poolOverride = true }
+        if noPool { poolOverride = false }
         if batch { batchMode = true }
         if quietFlag { quiet = true }
         if json { jsonOutput = true }
@@ -79,7 +86,8 @@ enum CLIRuntime {
         checksum: ChecksumAlgorithm? = nil,
         verifyChecksum: Bool = false,
         settings: MacSCPTransferSettings,
-        progress: ProgressHandler? = nil
+        progress: ProgressHandler? = nil,
+        useDeltaSync: Bool? = nil
     ) -> TransferOptions {
         TransferOptions(
             resume: resume ?? settings.resume,
@@ -91,7 +99,8 @@ enum CLIRuntime {
             maxConcurrentUploads: settings.maxConcurrentUploads,
             maxConcurrentWrites: settings.maxConcurrentWrites,
             maxConcurrentReads: settings.maxConcurrentReads,
-            verifyChecksum: verifyChecksum || settings.verifyChecksums
+            verifyChecksum: verifyChecksum || settings.verifyChecksums,
+            useDeltaSync: useDeltaSync ?? settings.deltaSync
         )
     }
 

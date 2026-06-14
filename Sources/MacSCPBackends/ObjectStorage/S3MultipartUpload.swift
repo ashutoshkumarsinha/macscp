@@ -29,37 +29,75 @@ enum S3MultipartUpload {
         let handle = try FileHandle(forReadingFrom: localURL)
         defer { try? handle.close() }
 
+        let maxInFlight = max(1, min(4, options.maxConcurrentUploads))
         var partNumber = 1
         var uploaded: Int64 = 0
         var etags: [(Int, String)] = []
+        etags.reserveCapacity(Int((fileSize + Int64(partSize) - 1) / Int64(partSize)))
 
-        while uploaded < fileSize {
-            try options.throwIfCancelled()
+        struct PartWork: Sendable {
+            let partNumber: Int
+            let body: Data
+        }
+
+        var pendingParts: [PartWork] = []
+
+        func readNextPart() throws -> PartWork? {
+            guard uploaded < fileSize else { return nil }
             let chunk = try handle.read(upToCount: partSize) ?? Data()
-            if chunk.isEmpty { break }
-            let etag = try await uploadPart(
-                key: key,
-                uploadID: uploadID,
-                partNumber: partNumber,
-                body: chunk,
-                layout: layout,
-                credentials: credentials
-            )
-            etags.append((partNumber, etag))
-            uploaded += Int64(chunk.count)
+            guard !chunk.isEmpty else { return nil }
+            let work = PartWork(partNumber: partNumber, body: chunk)
             partNumber += 1
+            uploaded += Int64(chunk.count)
+            return work
+        }
+
+        while uploaded < fileSize || !pendingParts.isEmpty {
+            try options.throwIfCancelled()
+            while pendingParts.count < maxInFlight, uploaded < fileSize {
+                guard let work = try readNextPart() else { break }
+                pendingParts.append(work)
+            }
+            guard !pendingParts.isEmpty else { break }
+
+            let batch = pendingParts
+            pendingParts.removeAll(keepingCapacity: true)
+
+            let batchResults = try await withThrowingTaskGroup(of: (Int, String).self) { group in
+                for work in batch {
+                    group.addTask {
+                        let etag = try await uploadPart(
+                            key: key,
+                            uploadID: uploadID,
+                            partNumber: work.partNumber,
+                            body: work.body,
+                            layout: layout,
+                            credentials: credentials
+                        )
+                        return (work.partNumber, etag)
+                    }
+                }
+                var results: [(Int, String)] = []
+                for try await result in group {
+                    results.append(result)
+                }
+                return results
+            }
+            etags.append(contentsOf: batchResults)
+
             options.progress?(
                 TransferProgress(
                     transferID: UUID(),
                     direction: .upload,
                     path: remotePath,
                     totalBytes: fileSize,
-                    transferredBytes: uploaded,
+                    transferredBytes: min(uploaded, fileSize),
                     bytesPerSecond: nil
                 )
             )
         }
 
+        etags.sort { $0.0 < $1.0 }
         try await completeMultipart(
             key: key,
             uploadID: uploadID,

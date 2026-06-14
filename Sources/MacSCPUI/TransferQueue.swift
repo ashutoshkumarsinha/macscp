@@ -7,6 +7,7 @@
 //
 import Foundation
 import MacSCPCore
+import MacSCPBackends
 
 public enum TransferJobState: Equatable, Sendable {
     case queued
@@ -288,7 +289,15 @@ public final class TransferQueue {
                 continue
             }
 
-            let indicesToStart = jobs.indices.filter { jobs[$0].state == .queued }.prefix(availableSlots)
+            let indicesToStart = jobs.indices
+                .filter { jobs[$0].state == .queued }
+                .sorted { lhs, rhs in
+                    let leftSize = jobs[lhs].totalBytes ?? Int64.max
+                    let rightSize = jobs[rhs].totalBytes ?? Int64.max
+                    if leftSize != rightSize { return leftSize < rightSize }
+                    return jobs[lhs].enqueuedAt < jobs[rhs].enqueuedAt
+                }
+                .prefix(availableSlots)
             if indicesToStart.isEmpty {
                 if runningCount == 0 {
                     notifyQueueIdleIfNeeded()
@@ -415,7 +424,8 @@ public final class TransferQueue {
             maxConcurrentWrites: transferSettings.maxConcurrentWrites,
             maxConcurrentReads: transferSettings.maxConcurrentReads,
             cancellation: cancellation,
-            verifyChecksum: transferSettings.verifyChecksums
+            verifyChecksum: transferSettings.verifyChecksums,
+            useDeltaSync: transferSettings.deltaSync
         )
     }
 
@@ -465,9 +475,27 @@ public final class TransferQueue {
             let result: TransferResult
             switch direction {
             case .upload:
-                result = try await backend.upload(localURL: localURL, remotePath: remotePath, options: options)
+                if options.useDeltaSync {
+                    result = try await DeltaSyncEngine.syncUpload(
+                        localURL: localURL,
+                        remotePath: remotePath,
+                        backend: backend,
+                        options: options
+                    )
+                } else {
+                    result = try await backend.upload(localURL: localURL, remotePath: remotePath, options: options)
+                }
             case .download:
-                result = try await backend.download(remotePath: remotePath, localURL: localURL, options: options)
+                if options.useDeltaSync {
+                    result = try await DeltaSyncEngine.syncDownload(
+                        remotePath: remotePath,
+                        localURL: localURL,
+                        backend: backend,
+                        options: options
+                    )
+                } else {
+                    result = try await backend.download(remotePath: remotePath, localURL: localURL, options: options)
+                }
             }
 
             guard let idx = jobs.firstIndex(where: { $0.id == jobID }) else { return }

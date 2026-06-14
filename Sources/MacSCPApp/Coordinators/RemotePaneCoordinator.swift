@@ -3,7 +3,8 @@
 // WHAT THIS FILE DOES
 // -------------------
 // Remote SFTP listing and path navigation. AppModel refreshes remoteEntries via the
-// connected TransferBackend when the user browses the remote pane.
+// connected TransferBackend when the user browses the remote pane. Shows cached entries
+// immediately while a background refresh runs (stale-while-revalidate).
 //
 
 import Foundation
@@ -17,21 +18,27 @@ final class RemotePaneCoordinator {
     var selectedRemoteNames = Set<String>()
     private var backStack: [String] = []
     private var forwardStack: [String] = []
+    private var refreshTask: Task<Void, Never>?
+    private var lastListedPath: String?
 
     var canNavigateBack: Bool { !backStack.isEmpty }
     var canNavigateForward: Bool { !forwardStack.isEmpty }
 
     var onStatusMessage: ((String) -> Void)?
 
-    func refreshRemote(backend: TransferBackend?, at remotePath: String) async {
+    func refreshRemote(backend: TransferBackend?, at remotePath: String, force: Bool = false) async {
         guard let backend else { return }
-        do {
-            remoteEntries = try await backend.listDirectory(at: remotePath)
-            onStatusMessage?("Remote listing updated")
-        } catch {
-            onStatusMessage?("Remote list failed: \(error.localizedDescription)")
-            MacSCPLogger.shared.error(error, context: "Remote list failed at \(remotePath)", category: .backend)
+
+        if !force, lastListedPath == remotePath, !remoteEntries.isEmpty {
+            refreshTask?.cancel()
+            refreshTask = Task { [weak self] in
+                await self?.fetchListing(backend: backend, at: remotePath, staleWhileRevalidate: true)
+            }
+            return
         }
+
+        refreshTask?.cancel()
+        await fetchListing(backend: backend, at: remotePath, staleWhileRevalidate: false)
     }
 
     func navigateUp(from remotePath: String) -> String {
@@ -69,10 +76,31 @@ final class RemotePaneCoordinator {
         backStack.removeAll()
         forwardStack.removeAll()
         selectedRemoteNames = []
+        lastListedPath = nil
     }
 
     private func pushHistory(current: String) {
         backStack.append(current)
         forwardStack.removeAll()
+    }
+
+    private func fetchListing(backend: TransferBackend, at remotePath: String, staleWhileRevalidate: Bool) async {
+        do {
+            let entries = try await backend.listDirectory(at: remotePath)
+            guard !Task.isCancelled else { return }
+            remoteEntries = entries
+            lastListedPath = remotePath
+            if staleWhileRevalidate {
+                onStatusMessage?("Remote listing refreshed")
+            } else {
+                onStatusMessage?("Remote listing updated")
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            if !staleWhileRevalidate || remoteEntries.isEmpty {
+                onStatusMessage?("Remote list failed: \(error.localizedDescription)")
+            }
+            MacSCPLogger.shared.error(error, context: "Remote list failed at \(remotePath)", category: .backend)
+        }
     }
 }

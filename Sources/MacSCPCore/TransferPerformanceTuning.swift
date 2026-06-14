@@ -35,6 +35,9 @@ public enum AppleSiliconSupport {
         let cores = ProcessInfo.processInfo.activeProcessorCount
         return min(max(2, cores / 2), 4)
     }
+
+    /// Conservative pool size for Intel Macs when high-throughput preset is active.
+    public static var recommendedIntelPoolSize: Int { 2 }
 }
 
 /// Maps config presets and benchmarks to numeric tuning values.
@@ -79,10 +82,13 @@ public enum TransferPerformanceTuning {
     }
 
     /// How many SFTP connections PooledTransferBackend should open.
-    /// apple_silicon preset on arm64 bumps this up to recommendedPoolSize.
+    /// apple_silicon preset bumps pool size on arm64; on Intel uses a smaller pool of 2.
     public static func effectivePoolSize(from settings: MacSCPTransferSettings) -> Int {
-        if settings.preset == .appleSilicon, AppleSiliconSupport.isAppleSilicon {
-            return max(settings.maxConcurrentTransfers, AppleSiliconSupport.recommendedPoolSize)
+        if settings.preset == .appleSilicon {
+            if AppleSiliconSupport.isAppleSilicon {
+                return max(settings.maxConcurrentTransfers, AppleSiliconSupport.recommendedPoolSize)
+            }
+            return max(settings.maxConcurrentTransfers, AppleSiliconSupport.recommendedIntelPoolSize)
         }
         return max(1, settings.maxConcurrentTransfers)
     }

@@ -86,7 +86,16 @@ struct CLIGlobalOptions: ParsableArguments {
     @Option(name: .long, help: "Log file path.")
     var logfile: String?
 
+    @Flag(name: .long, help: "Use SFTP connection pool for transfers (overrides config).")
+    var pool = false
+
+    @Flag(name: .long, help: "Single serialized SFTP connection (disables pool).")
+    var noPool = false
+
     mutating func validate() throws {
+        if pool && noPool {
+            throw ValidationError("Cannot use both --pool and --no-pool")
+        }
         CLIRuntime.applyGlobalOptions(
             batch: batch,
             quietFlag: quiet,
@@ -95,7 +104,9 @@ struct CLIGlobalOptions: ParsableArguments {
             timeout: timeout,
             hostkeys: hostkey,
             loglevel: loglevel,
-            logfile: logfile
+            logfile: logfile,
+            pool: pool,
+            noPool: noPool
         )
         CLIRuntime.bootstrapLogging()
     }
@@ -223,6 +234,7 @@ extension MacSCPCLICommand {
         @Flag(name: .long, help: "Preview only.") var preview = false
         @Option(name: .long, help: "WinSCP-style file mask.") var filemask: String?
         @Option(name: .long, help: "Compare criteria: time, size, checksum.") var criteria: String?
+        @Flag(name: .long, help: "rsync-style block delta for changed files (SFTP, ≥64 KB).") var delta = false
 
         mutating func run() async throws {
             try await CLIActions.sync(
@@ -234,7 +246,8 @@ extension MacSCPCLICommand {
                 preview: preview,
                 deleteExtraneous: delete,
                 fileMask: filemask,
-                criteria: SyncCompareCriteria(rawValue: criteria ?? "time") ?? .time
+                criteria: SyncCompareCriteria(rawValue: criteria ?? "time") ?? .time,
+                useDelta: delta
             )
         }
     }

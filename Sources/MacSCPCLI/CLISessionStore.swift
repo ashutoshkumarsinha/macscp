@@ -23,10 +23,6 @@ actor CLISessionStore {
             settingsLoaded = true
             return
         }
-        guard !CLIRuntime.skipIni else {
-            settingsLoaded = true
-            return
-        }
         if let configURL = CLIRuntime.configURL {
             transferSettings = try MacSCPConfiguration.loadSettings(at: configURL).transfer
         } else {
@@ -61,17 +57,11 @@ actor CLISessionStore {
         CLIRuntime.applyAdvanced(to: &session)
         session.networkProfile = TransferPerformanceTuning.networkProfile(from: transferSettings.preset)
 
-        let backendKind = SFTPBackendSelector.select(
-            authMethod: configuration.authMethod,
-            settings: transferSettings,
-            advanced: session.advanced
+        let instance = try await TransferSessionConnector.connect(
+            configuration: session,
+            transferSettings: transferSettings,
+            usePool: CLIRuntime.poolOverride
         )
-        let instance = try TransferBackendFactory.make(
-            for: configuration.protocol,
-            backend: backendKind,
-            serialized: true
-        )
-        try await instance.connect(configuration: session)
         try await instance.changeDirectory(to: session.initialRemotePath.isEmpty ? "/" : session.initialRemotePath)
         backend = instance
         self.configuration = session

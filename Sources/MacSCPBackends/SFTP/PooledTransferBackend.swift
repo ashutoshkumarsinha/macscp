@@ -11,14 +11,19 @@ import MacSCPCore
 
 actor TransferConnectionPool {
     private var available: [CapableTransferBackend]
-    private let all: [CapableTransferBackend]
+    private var all: [CapableTransferBackend]
 
-    init(backends: [CapableTransferBackend]) {
-        self.all = backends
-        self.available = backends
+    init(primary: CapableTransferBackend) {
+        self.all = [primary]
+        self.available = [primary]
     }
 
     var allBackends: [CapableTransferBackend] { all }
+
+    func add(_ backend: CapableTransferBackend) {
+        all.append(backend)
+        available.append(backend)
+    }
 
     func borrow() async -> CapableTransferBackend {
         while available.isEmpty {
@@ -40,6 +45,7 @@ actor TransferConnectionPool {
             try await backend.disconnect()
         }
         available.removeAll()
+        all.removeAll()
     }
 }
 
@@ -56,6 +62,9 @@ public final class PooledTransferBackend: CapableTransferBackend, @unchecked Sen
     private let backendKind: SFTPBackendKind
     private var primary: CapableTransferBackend?
     private var pool: TransferConnectionPool?
+    private var warmTask: Task<Void, Never>?
+    private var sessionConfiguration: SessionConfiguration?
+    private var currentRemotePath: String = "/"
 
     public init(poolSize: Int, backendKind: SFTPBackendKind = .citadel) {
         self.poolSize = max(1, poolSize)
@@ -67,35 +76,36 @@ public final class PooledTransferBackend: CapableTransferBackend, @unchecked Sen
             try await disconnect()
         }
 
-        var backends: [CapableTransferBackend] = []
-        backends.reserveCapacity(poolSize)
-        for _ in 0 ..< poolSize {
-            let raw = try TransferBackendFactory.make(
-                for: .sftp,
-                backend: backendKind,
-                serialized: false
-            )
-            guard let capable = raw as? CapableTransferBackend else {
-                throw BackendError.notImplemented("Pooled backend requires CapableTransferBackend")
-            }
-            try await capable.connect(configuration: configuration)
-            backends.append(capable)
-        }
-
-        primary = backends[0]
-        pool = TransferConnectionPool(backends: backends)
+        let primaryBackend = try await Self.makeConnectedBackend(
+            backendKind: backendKind,
+            configuration: configuration
+        )
+        primary = primaryBackend
+        pool = TransferConnectionPool(primary: primaryBackend)
+        sessionConfiguration = configuration
+        currentRemotePath = configuration.initialRemotePath.isEmpty ? "/" : configuration.initialRemotePath
         isConnected = true
+
+        if poolSize > 1 {
+            warmTask = Task { [weak self] in
+                await self?.warmRemainingConnections(startingAt: 1)
+            }
+        }
     }
 
     public func disconnect() async throws {
+        warmTask?.cancel()
+        warmTask = nil
         try await pool?.shutdown()
         pool = nil
         primary = nil
+        sessionConfiguration = nil
         isConnected = false
     }
 
     public func changeDirectory(to path: String) async throws {
         guard let pool else { throw BackendError.notConnected }
+        currentRemotePath = path
         for backend in await pool.allBackends {
             try await backend.changeDirectory(to: path)
         }
@@ -185,7 +195,12 @@ public final class PooledTransferBackend: CapableTransferBackend, @unchecked Sen
         options: TransferOptions
     ) async throws -> [TransferResult] {
         guard let pool else { throw BackendError.notConnected }
-        let sortedItems = items.sorted { $0.remotePath < $1.remotePath }
+        let sortedItems = items.sorted { lhs, rhs in
+            let lSize = (try? lhs.localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? Int.max
+            let rSize = (try? rhs.localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? Int.max
+            if lSize != rSize { return lSize < rSize }
+            return lhs.remotePath < rhs.remotePath
+        }
         let concurrency = max(1, options.maxConcurrentUploads)
         return try await SFTPBatchUploadExecutor.uploadBatch(
             items: sortedItems,
@@ -204,6 +219,42 @@ public final class PooledTransferBackend: CapableTransferBackend, @unchecked Sen
             } catch {
                 await pool.release(backend)
                 throw error
+            }
+        }
+    }
+
+    private static func makeConnectedBackend(
+        backendKind: SFTPBackendKind,
+        configuration: SessionConfiguration
+    ) async throws -> CapableTransferBackend {
+        let raw = try TransferBackendFactory.make(
+            for: .sftp,
+            backend: backendKind,
+            serialized: false
+        )
+        guard let capable = raw as? CapableTransferBackend else {
+            throw BackendError.notImplemented("Pooled backend requires CapableTransferBackend")
+        }
+        try await capable.connect(configuration: configuration)
+        return capable
+    }
+
+    private func warmRemainingConnections(startingAt index: Int) async {
+        guard let configuration = sessionConfiguration, let pool else { return }
+        for slot in index ..< poolSize {
+            guard !Task.isCancelled else { return }
+            do {
+                let backend = try await Self.makeConnectedBackend(
+                    backendKind: backendKind,
+                    configuration: configuration
+                )
+                try await backend.changeDirectory(to: currentRemotePath)
+                await pool.add(backend)
+            } catch {
+                MacSCPLogger.shared.warning(
+                    "Pool warm-up connection \(slot + 1)/\(poolSize) failed: \(error.localizedDescription)",
+                    category: .backend
+                )
             }
         }
     }

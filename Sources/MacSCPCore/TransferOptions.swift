@@ -75,6 +75,8 @@ public struct TransferOptions: Sendable {
     public var cancellation: TransferCancellation?
     /// When false, skip checksum computation even if `checksum` is set (faster transfers).
     public var verifyChecksum: Bool
+    /// Use rsync-style block delta when both sides have an existing file (SFTP only).
+    public var useDeltaSync: Bool
 
     public init(
         resume: Bool = false,
@@ -88,7 +90,8 @@ public struct TransferOptions: Sendable {
         maxConcurrentWrites: Int = 16,
         maxConcurrentReads: Int = 8,
         cancellation: TransferCancellation? = nil,
-        verifyChecksum: Bool = false
+        verifyChecksum: Bool = false,
+        useDeltaSync: Bool = false
     ) {
         self.resume = resume
         self.overwrite = overwrite
@@ -102,6 +105,7 @@ public struct TransferOptions: Sendable {
         self.maxConcurrentReads = maxConcurrentReads
         self.cancellation = cancellation
         self.verifyChecksum = verifyChecksum
+        self.useDeltaSync = useDeltaSync
     }
 
     public func throwIfCancelled() throws {

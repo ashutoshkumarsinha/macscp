@@ -814,7 +814,7 @@ final class AppModel: TransferBackendProvider {
         // Debounce listing refresh so bursts of small files do not hammer listDirectory.
         paneRefreshTask?.cancel()
         paneRefreshTask = Task {
-            try? await Task.sleep(for: .milliseconds(400))
+            try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled else { return }
             if transfers.transferQueue.activeCount > 0 { return }
             await refreshRemote()

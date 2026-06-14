@@ -18,7 +18,7 @@ struct MacSCPBenchmarkCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "macscp-benchmark",
         abstract: "Run MacSCP SFTP backend spike benchmarks (spec §5).",
-        subcommands: [UploadSpike.self, ProfileUpload.self]
+        subcommands: [UploadSpike.self, ProfileUpload.self, PoolConnect.self, MultiplexSpike.self, ProxyCommandBench.self, CloudBackends.self]
     )
 
     @Flag(name: .long, help: "Use full file sizes (1 MB, 100 MB, 1 GB) and 10k small files.")
@@ -120,6 +120,145 @@ struct UploadSpike: AsyncParsableCommand {
     }
 }
 
+struct PoolConnect: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "pool-connect",
+        abstract: "Compare single vs pooled SFTP connect time to first listing."
+    )
+
+    @Option(name: .long, help: "Write JSON report to path.")
+    var output: String?
+
+    mutating func run() async throws {
+        configureBenchmarkLogging()
+        let config = try BenchmarkConfig.fromEnvironment()
+        print("MacSCP Pool Connect Benchmark")
+        print("  Host: \(config.host):\(config.port)")
+        print()
+
+        let results = try await PoolConnectBenchmarkRunner(config: config).run()
+        for result in results {
+            let status = result.passed ? "PASS" : "FAIL"
+            print("[\(status)] \(result.scenario): \(String(format: "%.3f", result.durationSeconds))s — \(result.notes ?? "")")
+        }
+
+        try writeReport(
+            results: results,
+            config: config,
+            output: output,
+            defaultPath: ".benchmark/benchmark-results/pool-connect.json",
+            recommendation: "Pool first-list should complete within 1.5× single connect."
+        )
+    }
+}
+
+struct MultiplexSpike: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "multiplex-spike",
+        abstract: "Compare dual SSH handshakes vs two SFTP channels on one SSH connection."
+    )
+
+    @Option(name: .long, help: "Write JSON report to path.")
+    var output: String?
+
+    mutating func run() async throws {
+        configureBenchmarkLogging()
+        let config = try BenchmarkConfig.fromEnvironment()
+        print("MacSCP SSH Multiplex Spike")
+        print("  Host: \(config.host):\(config.port)")
+        print()
+
+        let results = try await MultiplexSpikeBenchmarkRunner(config: config).run()
+        for result in results {
+            let status = result.passed ? "PASS" : "FAIL"
+            print("[\(status)] \(result.scenario): \(String(format: "%.3f", result.durationSeconds))s — \(result.notes ?? "")")
+        }
+
+        try writeReport(
+            results: results,
+            config: config,
+            output: output,
+            defaultPath: ".benchmark/benchmark-results/multiplex-spike.json",
+            recommendation: results.last?.notes ?? "See docs/spikes/ssh-multiplex-spike.md"
+        )
+    }
+}
+
+struct ProxyCommandBench: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "proxy-command",
+        abstract: "Measure connect+list overhead through OpenSSH ProxyCommand relay."
+    )
+
+    @Option(name: .long, help: "Write JSON report to path.")
+    var output: String?
+
+    mutating func run() async throws {
+        configureBenchmarkLogging()
+        let config = try BenchmarkConfig.fromEnvironment()
+        print("MacSCP ProxyCommand Overhead Benchmark")
+        print("  Host: \(config.host):\(config.port)")
+        print()
+
+        let results = try await ProxyCommandBenchmarkRunner(config: config).run()
+        for result in results {
+            let status = result.passed ? "PASS" : "FAIL"
+            print("[\(status)] \(result.scenario): \(String(format: "%.3f", result.durationSeconds))s — \(result.notes ?? "")")
+        }
+
+        try writeReport(
+            results: results,
+            config: config,
+            output: output,
+            defaultPath: ".benchmark/benchmark-results/proxy-command.json",
+            recommendation: "ProxyCommand connect+list should stay within 2× direct connect."
+        )
+    }
+}
+
+struct CloudBackends: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "cloud-backends",
+        abstract: "WebDAV and S3 upload benchmarks (requires benchmark-cloud-env.sh)."
+    )
+
+    @Option(name: .long, help: "Upload size in bytes (default 10 MB).")
+    var size: Int = 10_485_760
+
+    @Option(name: .long, help: "Write JSON report to path.")
+    var output: String?
+
+    mutating func run() async throws {
+        configureBenchmarkLogging()
+        let config = try BenchmarkConfig.fromEnvironment()
+        print("MacSCP Cloud Backend Benchmark")
+        print("  WebDAV: \(config.webDAVSessionConfiguration() != nil ? "enabled" : "skipped")")
+        print("  S3: \(config.s3SessionConfiguration() != nil ? "enabled" : "skipped")")
+        print()
+
+        let results = try await CloudBackendBenchmarkRunner(config: config, uploadSize: size).run()
+        for result in results {
+            let status = result.passed ? "PASS" : "FAIL"
+            var line = "[\(status)] \(result.scenario): \(String(format: "%.3f", result.durationSeconds))s"
+            if let mbps = result.throughputMBps {
+                line += String(format: " (%.1f MB/s)", mbps)
+            }
+            if let notes = result.notes {
+                line += " — \(notes)"
+            }
+            print(line)
+        }
+
+        try writeReport(
+            results: results,
+            config: config,
+            output: output,
+            defaultPath: ".benchmark/benchmark-results/cloud-backends.json",
+            recommendation: "Run scripts/benchmark-cloud-env.sh before cloud-backends in CI."
+        )
+    }
+}
+
 struct ProfileUpload: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "profile-upload",
@@ -152,6 +291,42 @@ struct ProfileUpload: AsyncParsableCommand {
         print()
         print("Report written to \(outURL.path)")
     }
+}
+
+private func writeReport(
+    results: [BenchmarkResult],
+    config: BenchmarkConfig,
+    output: String?,
+    defaultPath: String,
+    recommendation: String
+) throws {
+    let report = BenchmarkReport(
+        timestamp: ISO8601DateFormatter().string(from: Date()),
+        config: .init(
+            host: config.host,
+            port: config.port,
+            smallFileCount: config.smallFileCount,
+            largeFileSizes: config.largeFileSizes,
+            hostInfo: BenchmarkHostInfo.current()
+        ),
+        results: results,
+        summary: .init(
+            citadelLargeFileRatio: nil,
+            citadelSmallFileRatio: nil,
+            passCriteriaMet: results.allSatisfy(\.passed),
+            recommendation: recommendation
+        )
+    )
+
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let data = try encoder.encode(report)
+    let outPath = output ?? defaultPath
+    let outURL = URL(fileURLWithPath: outPath)
+    try FileManager.default.createDirectory(at: outURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try data.write(to: outURL)
+    print()
+    print("Report written to \(outURL.path)")
 }
 
 private func configureBenchmarkLogging() {

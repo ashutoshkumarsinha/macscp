@@ -1,0 +1,47 @@
+# Local WebDAV + MinIO fixtures for macscp-benchmark cloud-backends.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.bench-cloud.yml up -d
+#   ./scripts/benchmark-cloud-env.sh start
+#
+services:
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --address :9000
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc mb -p local/macscp-bench || true
+      "
+
+  webdav:
+    image: ugeek/webdav:alpine
+    ports:
+      - "8080:80"
+    environment:
+      USERNAME: bench
+      PASSWORD: bench
+    volumes:
+      - webdav-data:/data
+
+volumes:
+  minio-data:
+  webdav-data:

@@ -65,7 +65,11 @@ public enum DirectorySyncEngine {
         options: SyncCompareOptions = SyncCompareOptions()
     ) async throws -> [SyncCompareRow] {
         let localFiles = try indexLocalFiles(at: localRoot)
-        let remoteFiles = try await indexRemoteFiles(backend: backend, at: remoteRoot)
+        let remoteFiles = try await indexRemoteFiles(
+            backend: backend,
+            at: remoteRoot,
+            options: options
+        )
         let allPaths = Set(localFiles.keys).union(remoteFiles.keys)
             .filter { options.fileMask.matches(relativePath: $0) }
             .sorted()
@@ -234,42 +238,119 @@ public enum DirectorySyncEngine {
 
     private static func indexRemoteFiles(
         backend: TransferBackend,
-        at remoteRoot: String
+        at remoteRoot: String,
+        options: SyncCompareOptions
     ) async throws -> [String: RemoteIndexEntry] {
-        var index: [String: RemoteIndexEntry] = [:]
         let normalizedRoot = SFTPPathJoin.normalizeRemote(remoteRoot)
-        try await collectRemote(
+        let cacheKey = SyncIndexStore.cacheKey(
+            remoteRoot: normalizedRoot,
+            backendIdentifier: options.remoteIndexCacheKey ?? backend.backendIdentifier
+        )
+
+        if options.useRemoteIndexCache,
+           let cached = await SyncIndexStore.shared.cachedEntries(forKey: cacheKey) {
+            return cached.mapValues {
+                RemoteIndexEntry(path: $0.path, size: $0.size, modified: $0.modified)
+            }
+        }
+
+        let index = try await collectRemoteParallel(
             backend: backend,
             remoteDirectory: normalizedRoot,
             relativePrefix: "",
-            into: &index
+            concurrency: options.maxConcurrentRemoteLists
         )
+
+        if options.useRemoteIndexCache {
+            let stored = index.mapValues {
+                SyncRemoteIndexEntry(path: $0.path, size: $0.size, modified: $0.modified)
+            }
+            await SyncIndexStore.shared.store(stored, forKey: cacheKey)
+        }
+
         return index
     }
 
-    private static func collectRemote(
+    private struct RemoteDirectoryWork: Sendable {
+        var remoteDirectory: String
+        var relativePrefix: String
+    }
+
+    private actor RemoteIndexBuilder {
+        private var index: [String: RemoteIndexEntry] = [:]
+
+        func addFile(relative: String, entry: RemoteIndexEntry) {
+            index[relative] = entry
+        }
+
+        func snapshot() -> [String: RemoteIndexEntry] {
+            index
+        }
+    }
+
+    private static func collectRemoteParallel(
         backend: TransferBackend,
         remoteDirectory: String,
         relativePrefix: String,
-        into index: inout [String: RemoteIndexEntry]
-    ) async throws {
-        let entries = try await backend.listDirectory(at: remoteDirectory)
-        for entry in entries where entry.name != "." && entry.name != ".." {
-            let relative = relativePrefix.isEmpty ? entry.name : "\(relativePrefix)/\(entry.name)"
-            switch entry.type {
-            case .file:
-                index[relative] = RemoteIndexEntry(path: entry.path, size: entry.size, modified: entry.modified)
-            case .directory:
-                try await collectRemote(
-                    backend: backend,
-                    remoteDirectory: entry.path,
-                    relativePrefix: relative,
-                    into: &index
-                )
-            case .symlink:
-                continue
+        concurrency: Int
+    ) async throws -> [String: RemoteIndexEntry] {
+        let builder = RemoteIndexBuilder()
+        var queue: [RemoteDirectoryWork] = [
+            RemoteDirectoryWork(remoteDirectory: remoteDirectory, relativePrefix: relativePrefix),
+        ]
+        var queueIndex = 0
+
+        try await withThrowingTaskGroup(of: [RemoteDirectoryWork].self) { group in
+            var inFlight = 0
+
+            func enqueueWork(_ work: RemoteDirectoryWork) {
+                inFlight += 1
+                group.addTask {
+                    let entries = try await backend.listDirectory(at: work.remoteDirectory)
+                    var childDirs: [RemoteDirectoryWork] = []
+                    for entry in entries where entry.name != "." && entry.name != ".." {
+                        let relative = work.relativePrefix.isEmpty
+                            ? entry.name
+                            : "\(work.relativePrefix)/\(entry.name)"
+                        switch entry.type {
+                        case .file:
+                            await builder.addFile(
+                                relative: relative,
+                                entry: RemoteIndexEntry(
+                                    path: entry.path,
+                                    size: entry.size,
+                                    modified: entry.modified
+                                )
+                            )
+                        case .directory:
+                            childDirs.append(
+                                RemoteDirectoryWork(
+                                    remoteDirectory: entry.path,
+                                    relativePrefix: relative
+                                )
+                            )
+                        case .symlink:
+                            continue
+                        }
+                    }
+                    return childDirs
+                }
+            }
+
+            while queueIndex < queue.count || inFlight > 0 {
+                while inFlight < concurrency, queueIndex < queue.count {
+                    enqueueWork(queue[queueIndex])
+                    queueIndex += 1
+                }
+                if inFlight == 0 { break }
+                if let childDirs = try await group.next() {
+                    queue.append(contentsOf: childDirs)
+                    inFlight -= 1
+                }
             }
         }
+
+        return await builder.snapshot()
     }
 
     private static func buildRow(

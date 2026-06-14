@@ -43,6 +43,13 @@ jobs:
       - name: Verify pass criteria
         run: ./scripts/verify-benchmark-report.sh
 
+      - name: Cloud backend benchmarks
+        continue-on-error: true
+        run: |
+          ./scripts/benchmark-cloud-env.sh start
+          eval "$(./scripts/benchmark-cloud-env.sh env)"
+          swift run macscp-benchmark cloud-backends
+
       - name: Upload benchmark report
         if: always()
         uses: actions/upload-artifact@v4
@@ -51,4 +58,5 @@ jobs:
           path: |
             .benchmark/benchmark-results/report.json
             .benchmark/benchmark-results/upload-spike.json
+            .benchmark/benchmark-results/cloud-backends.json
           if-no-files-found: ignore

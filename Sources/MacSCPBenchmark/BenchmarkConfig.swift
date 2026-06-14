@@ -22,6 +22,34 @@ public struct BenchmarkConfig: Sendable {
     public var largeFileSizes: [Int]
     public var skipLarge1GB: Bool
 
+    public init(
+        host: String,
+        port: Int,
+        username: String,
+        password: String? = nil,
+        keyPath: String? = nil,
+        keyPassphrase: String? = nil,
+        authMethod: AuthMethod,
+        dataDirectory: URL,
+        workDirectory: URL,
+        smallFileCount: Int,
+        largeFileSizes: [Int],
+        skipLarge1GB: Bool
+    ) {
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.keyPath = keyPath
+        self.keyPassphrase = keyPassphrase
+        self.authMethod = authMethod
+        self.dataDirectory = dataDirectory
+        self.workDirectory = workDirectory
+        self.smallFileCount = smallFileCount
+        self.largeFileSizes = largeFileSizes
+        self.skipLarge1GB = skipLarge1GB
+    }
+
     public static func fromEnvironment() throws -> BenchmarkConfig {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let benchRoot = root.appendingPathComponent(".benchmark", isDirectory: true)
@@ -64,6 +92,52 @@ public struct BenchmarkConfig: Sendable {
             networkProfile: TransferPerformanceTuning.networkProfile(
                 fromEnvironment: ProcessInfo.processInfo.environment["MACSCP_BENCH_NETWORK"]
             )
+        )
+    }
+
+    /// Loopback ProxyCommand that forwards through `ssh -W` to measure relay overhead.
+    public func proxyCommandSessionConfiguration() -> SessionConfiguration {
+        var session = sessionConfiguration()
+        let key = keyPath ?? ""
+        session.advanced.proxyCommand = """
+        ssh -p \(port) -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "\(key)" -W %h:%p \(username)@127.0.0.1
+        """
+        return session
+    }
+
+    public func webDAVSessionConfiguration() -> SessionConfiguration? {
+        let env = ProcessInfo.processInfo.environment
+        guard env["MACSCP_BENCH_WEBDAV"] == "1" else { return nil }
+        let webdavHost = env["MACSCP_BENCH_WEBDAV_HOST"] ?? "127.0.0.1"
+        let webdavPort = Int(env["MACSCP_BENCH_WEBDAV_PORT"] ?? "8080") ?? 8080
+        return SessionConfiguration(
+            name: "webdav-benchmark",
+            protocol: .webdav,
+            host: webdavHost,
+            port: webdavPort,
+            username: env["MACSCP_BENCH_WEBDAV_USER"] ?? "bench",
+            password: env["MACSCP_BENCH_WEBDAV_PASS"] ?? "bench",
+            authMethod: .password,
+            initialRemotePath: env["MACSCP_BENCH_WEBDAV_PATH"] ?? "/"
+        )
+    }
+
+    public func s3SessionConfiguration() -> SessionConfiguration? {
+        let env = ProcessInfo.processInfo.environment
+        guard env["MACSCP_BENCH_S3"] == "1" else { return nil }
+        let s3Host = env["MACSCP_BENCH_S3_HOST"] ?? "127.0.0.1"
+        let s3Port = Int(env["MACSCP_BENCH_S3_PORT"] ?? "9000") ?? 9000
+        let bucket = env["MACSCP_BENCH_S3_BUCKET"] ?? "macscp-bench"
+        return SessionConfiguration(
+            name: "s3-benchmark",
+            protocol: .s3,
+            host: s3Host,
+            port: s3Port,
+            username: env["MACSCP_BENCH_S3_ACCESS_KEY"] ?? "minioadmin",
+            password: env["MACSCP_BENCH_S3_SECRET_KEY"] ?? "minioadmin",
+            authMethod: .password,
+            initialRemotePath: "/\(bucket)/",
+            advanced: AdvancedSettings(cloudRegion: env["MACSCP_BENCH_S3_REGION"] ?? "us-east-1", cloudBucket: bucket)
         )
     }
 }

@@ -16,6 +16,7 @@ final class SyncCoordinator {
     var syncDirection: SyncDirection = .mirrorLocalToRemote
     var deleteExtraneous = false
     var showSyncSheet = false
+    private var lastComparedRemoteRoot: String?
 
     var onStatusMessage: ((String) -> Void)?
 
@@ -30,11 +31,16 @@ final class SyncCoordinator {
         }
         isComparing = true
         defer { isComparing = false }
+        lastComparedRemoteRoot = remotePath
         do {
             compareRows = try await DirectorySyncEngine.compare(
                 localRoot: localPath,
                 remoteRoot: remotePath,
-                backend: backend
+                backend: backend,
+                options: SyncCompareOptions(
+                    maxConcurrentRemoteLists: 4,
+                    useRemoteIndexCache: true
+                )
             )
             showSyncSheet = true
             onStatusMessage?("Compared \(compareRows.count) paths")
@@ -70,9 +76,10 @@ final class SyncCoordinator {
                     }
                 }
             }
-            showSyncSheet = false
-            onStatusMessage?("Queued bidirectional sync")
-            return
+        showSyncSheet = false
+        onStatusMessage?("Queued bidirectional sync")
+        invalidateRemoteIndexCache(backend: backend)
+        return
         }
 
         let files = DirectorySyncEngine.toTransferFiles(rows: compareRows, direction: syncDirection)
@@ -113,5 +120,15 @@ final class SyncCoordinator {
         }
         showSyncSheet = false
         onStatusMessage?("Queued \(plan.transfers.count) sync job(s)")
+        invalidateRemoteIndexCache(backend: backend)
+    }
+
+    private func invalidateRemoteIndexCache(backend: TransferBackend?) {
+        guard let backend, let remoteRoot = lastComparedRemoteRoot else { return }
+        let key = SyncIndexStore.cacheKey(
+            remoteRoot: remoteRoot,
+            backendIdentifier: backend.backendIdentifier
+        )
+        Task { await SyncIndexStore.shared.invalidate(key: key) }
     }
 }

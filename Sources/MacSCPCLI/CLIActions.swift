@@ -236,7 +236,8 @@ enum CLIActions {
         preview: Bool,
         deleteExtraneous: Bool = false,
         fileMask: String? = nil,
-        criteria: SyncCompareCriteria = .time
+        criteria: SyncCompareCriteria = .time,
+        useDelta: Bool = false
     ) async throws {
         let backend = try await CLISessionStore.shared.backendOrThrow()
         let settings = await CLISessionStore.shared.transferSettingsOrDefault()
@@ -244,7 +245,9 @@ enum CLIActions {
         let resolvedRemote = await CLISessionStore.shared.resolveRemotePath(remote)
         let compareOptions = SyncCompareOptions(
             criteria: criteria,
-            fileMask: SyncFileMask.parse(fileMask)
+            fileMask: SyncFileMask.parse(fileMask),
+            maxConcurrentRemoteLists: settings.maxConcurrentTransfers,
+            useRemoteIndexCache: true
         )
         let rows = try await DirectorySyncEngine.compare(
             localRoot: localURL,
@@ -252,7 +255,12 @@ enum CLIActions {
             backend: backend,
             options: compareOptions
         )
-        let transferOptions = CLIRuntime.makeTransferOptions(settings: settings)
+        let transferOptions = CLIRuntime.makeTransferOptions(
+            verifyChecksum: settings.verifyChecksums,
+            settings: settings
+        )
+        var syncTransferOptions = transferOptions
+        syncTransferOptions.useDeltaSync = useDelta || settings.deltaSync
 
         if bidirectional {
             let plan = DirectorySyncEngine.bidirectionalPlan(rows: rows, deleteExtraneous: deleteExtraneous)
@@ -285,7 +293,7 @@ enum CLIActions {
                     localURL: file.localURL,
                     remotePath: file.remotePath,
                     settings: settings,
-                    baseOptions: transferOptions
+                    baseOptions: syncTransferOptions
                 )
             }
             for file in plan.downloads {
@@ -295,7 +303,7 @@ enum CLIActions {
                     remotePath: file.remotePath,
                     localURL: file.localURL,
                     settings: settings,
-                    baseOptions: transferOptions
+                    baseOptions: syncTransferOptions
                 )
             }
             if deleteExtraneous {
@@ -354,7 +362,7 @@ enum CLIActions {
                     localURL: file.localURL,
                     remotePath: file.remotePath,
                     settings: settings,
-                    baseOptions: transferOptions
+                    baseOptions: syncTransferOptions
                 )
             case .mirrorRemoteToLocal:
                 try DirectoryTransferPlanner.ensureLocalDirectories(for: [file])
@@ -363,7 +371,7 @@ enum CLIActions {
                     remotePath: file.remotePath,
                     localURL: file.localURL,
                     settings: settings,
-                    baseOptions: transferOptions
+                    baseOptions: syncTransferOptions
                 )
             case .bidirectional:
                 break
@@ -402,11 +410,21 @@ enum CLIActions {
             localPath: localURL.path
         )
         do {
-            let result = try await backend.download(
-                remotePath: remotePath,
-                localURL: localURL,
-                options: options
-            )
+            let result: TransferResult
+            if options.useDeltaSync {
+                result = try await DeltaSyncEngine.syncDownload(
+                    remotePath: remotePath,
+                    localURL: localURL,
+                    backend: backend,
+                    options: options
+                )
+            } else {
+                result = try await backend.download(
+                    remotePath: remotePath,
+                    localURL: localURL,
+                    options: options
+                )
+            }
             CLIJSONEventStream.emitTransferComplete(
                 transferID: transferID,
                 direction: .download,
@@ -449,11 +467,21 @@ enum CLIActions {
             localPath: localURL.path
         )
         do {
-            let result = try await backend.upload(
-                localURL: localURL,
-                remotePath: remotePath,
-                options: options
-            )
+            let result: TransferResult
+            if options.useDeltaSync {
+                result = try await DeltaSyncEngine.syncUpload(
+                    localURL: localURL,
+                    remotePath: remotePath,
+                    backend: backend,
+                    options: options
+                )
+            } else {
+                result = try await backend.upload(
+                    localURL: localURL,
+                    remotePath: remotePath,
+                    options: options
+                )
+            }
             CLIJSONEventStream.emitTransferComplete(
                 transferID: transferID,
                 direction: .upload,

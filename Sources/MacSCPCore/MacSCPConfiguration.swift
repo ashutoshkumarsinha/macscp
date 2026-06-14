@@ -46,6 +46,8 @@ public struct MacSCPTransferSettings: Sendable, Equatable {
     public var preset: TransferPerformancePreset
     /// Use Traversio for key/password sessions when true (AGPL — see docs/user-guide.md).
     public var useTraversioForPerformance: Bool
+    /// rsync-style block delta for sync when both sides have an existing file (SFTP backends).
+    public var deltaSync: Bool
 
     public init(
         maxConcurrentTransfers: Int = 2,
@@ -56,7 +58,8 @@ public struct MacSCPTransferSettings: Sendable, Equatable {
         resume: Bool = true,
         verifyChecksums: Bool = false,
         preset: TransferPerformancePreset = .default,
-        useTraversioForPerformance: Bool = false
+        useTraversioForPerformance: Bool = false,
+        deltaSync: Bool = false
     ) {
         self.maxConcurrentTransfers = maxConcurrentTransfers
         self.maxConcurrentWrites = maxConcurrentWrites
@@ -67,6 +70,7 @@ public struct MacSCPTransferSettings: Sendable, Equatable {
         self.verifyChecksums = verifyChecksums
         self.preset = preset
         self.useTraversioForPerformance = useTraversioForPerformance
+        self.deltaSync = deltaSync
     }
 }
 
@@ -115,6 +119,7 @@ chunk_size = \(transfer.chunkSize)
 resume = true
 verify_checksums = false
 use_traversio_for_performance = false
+delta_sync = false
 
 [app]
 transfer_history = false
@@ -318,6 +323,8 @@ persist_tabs = true
             Self.applyPreset(parsed, to: &settings)
         case "use_traversio_for_performance":
             settings.useTraversioForPerformance = parseBool(value) ?? settings.useTraversioForPerformance
+        case "delta_sync":
+            settings.deltaSync = parseBool(value) ?? settings.deltaSync
         default:
             break
         }

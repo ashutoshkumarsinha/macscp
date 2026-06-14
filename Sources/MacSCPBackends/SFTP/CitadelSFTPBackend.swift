@@ -610,6 +610,48 @@ public final class CitadelSFTPBackend: CapableTransferBackend, @unchecked Sendab
     }
 }
 
+extension CitadelSFTPBackend: DeltaCapableTransferBackend {
+    public func readRemoteRange(remotePath: String, offset: Int64, length: Int) async throws -> Data {
+        let sftp = try requireSFTP()
+        let resolved = pathResolver.resolve(remotePath)
+        let file = try await sftp.openFile(filePath: resolved, flags: .read)
+        do {
+            let buffer = try await file.read(from: UInt64(offset), length: UInt32(length))
+            try await file.close()
+            return Data(buffer: buffer)
+        } catch {
+            try? await file.close()
+            throw error
+        }
+    }
+
+    public func writeRemoteRange(
+        remotePath: String,
+        offset: Int64,
+        data: Data,
+        create: Bool
+    ) async throws {
+        let sftp = try requireSFTP()
+        let resolved = pathResolver.resolve(remotePath)
+        var flags: SFTPOpenFileFlags = [.write]
+        if create, offset == 0 {
+            flags.insert(.create)
+            flags.insert(.truncate)
+        }
+        let file = try await sftp.openFile(filePath: resolved, flags: flags)
+        do {
+            var buffer = ByteBufferAllocator().buffer(capacity: data.count)
+            buffer.writeBytes(data)
+            try await file.write(buffer, at: UInt64(offset))
+        } catch {
+            try? await file.close()
+            throw error
+        }
+        try await file.close()
+        await listingCache.invalidate(path: resolved)
+    }
+}
+
 private extension Data {
     init(buffer: ByteBuffer) {
         var copy = buffer
